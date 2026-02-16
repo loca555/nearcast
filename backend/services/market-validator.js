@@ -5,9 +5,51 @@
  * AI сверяет с реальным расписанием и возвращает подтверждённые данные.
  */
 
+import Database from "better-sqlite3";
 import config from "../config.js";
 import { chatCompletion, getResponseText, getUsage } from "./ai-client.js";
 import { checkBudget, trackUsage } from "./spending-tracker.js";
+
+// ── Кэш матчей (SQLite, по UTC-дню) ────────────────────────
+
+let db = null;
+
+function initCache() {
+  if (db) return db;
+  db = new Database("nearcast-oracle.db");
+  db.pragma("journal_mode = WAL");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS matches_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      cache_key TEXT NOT NULL,
+      utc_date TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(cache_key, utc_date)
+    )
+  `);
+  return db;
+}
+
+function getCached(key, utcDate) {
+  const database = initCache();
+  const row = database
+    .prepare("SELECT data FROM matches_cache WHERE cache_key = ? AND utc_date = ?")
+    .get(key, utcDate);
+  if (row) {
+    console.log(`[cache] Кэш-хит: ${key} за ${utcDate}`);
+    return JSON.parse(row.data);
+  }
+  return null;
+}
+
+function setCache(key, utcDate, data) {
+  const database = initCache();
+  database
+    .prepare("INSERT OR REPLACE INTO matches_cache (cache_key, utc_date, data) VALUES (?, ?, ?)")
+    .run(key, utcDate, JSON.stringify(data));
+  console.log(`[cache] Сохранено: ${key} за ${utcDate}`);
+}
 
 // ── Парсинг JSON от AI (с очисткой типичных ошибок) ──────────
 
@@ -189,6 +231,11 @@ export async function getUpcomingMatches({ sport, country, league }) {
   const today = new Date().toISOString().split("T")[0];
   const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0];
 
+  // Проверяем кэш (по UTC-дню)
+  const cacheKey = `matches:${sport}:${country}:${league}`;
+  const cached = getCached(cacheKey, today);
+  if (cached) return cached;
+
   // Промпт на английском — лучше для web search (больше данных в сети)
   const prompt = `Search for the current ${leagueLabel} fixtures schedule.
 
@@ -215,7 +262,14 @@ Rules:
   trackUsage("validator", getUsage(response));
 
   const text = getResponseText(response);
-  return parseAIJson(text);
+  const result = parseAIJson(text);
+
+  // Кэшируем только если есть матчи
+  if (result.matches && result.matches.length > 0) {
+    setCache(cacheKey, today, result);
+  }
+
+  return result;
 }
 
 // ── AI: сгенерировать рынок для выбранного матча ─────────────
