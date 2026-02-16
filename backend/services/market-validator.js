@@ -425,7 +425,7 @@ export async function generateMarket({
 
   checkBudget();
 
-  const response = await chatCompletion(prompt, 800);
+  const response = await chatCompletion(prompt, 1024);
   trackUsage("validator", getUsage(response));
 
   const text = getResponseText(response);

@@ -71,7 +71,7 @@ RESPONSE FORMAT (JSON only, nothing else):
 
   checkBudget();
 
-  const response = await chatCompletion(prompt, 500, { webSearch: true });
+  const response = await chatCompletion(prompt, 1024, { webSearch: true });
   trackUsage("oracle", getUsage(response));
 
   const text = getResponseText(response);
