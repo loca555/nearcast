@@ -80,7 +80,11 @@ RESPONSE FORMAT (JSON only, nothing else):
     throw new Error(`AI вернул невалидный ответ: ${text}`);
   }
 
-  return JSON.parse(jsonMatch[0]);
+  let raw = jsonMatch[0];
+  // Убираем trailing commas и комментарии
+  raw = raw.replace(/,\s*([\]}])/g, "$1");
+  raw = raw.replace(/\/\/[^\n]*/g, "");
+  return JSON.parse(raw);
 }
 
 // ── Разрешение одного рынка ───────────────────────────────────

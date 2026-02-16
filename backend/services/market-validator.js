@@ -9,6 +9,27 @@ import config from "../config.js";
 import { chatCompletion, getResponseText, getUsage } from "./ai-client.js";
 import { checkBudget, trackUsage } from "./spending-tracker.js";
 
+// ── Парсинг JSON от AI (с очисткой типичных ошибок) ──────────
+
+function parseAIJson(text) {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error("AI вернул невалидный ответ");
+
+  let raw = jsonMatch[0];
+  // Убираем trailing commas перед ] и }
+  raw = raw.replace(/,\s*([\]}])/g, "$1");
+  // Убираем комментарии //
+  raw = raw.replace(/\/\/[^\n]*/g, "");
+
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    // Вторая попытка: вырезаем всё кроме JSON
+    const retry = raw.replace(/[\x00-\x1f]/g, " ");
+    return JSON.parse(retry);
+  }
+}
+
 // ── Доступные виды спорта и типы рынков ───────────────────────
 
 export const SPORTS_CONFIG = {
@@ -183,12 +204,7 @@ Rules:
   trackUsage("validator", getUsage(response));
 
   const text = getResponseText(response);
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("AI вернул невалидный ответ");
-  }
-
-  return JSON.parse(jsonMatch[0]);
+  return parseAIJson(text);
 }
 
 // ── AI: сгенерировать рынок для выбранного матча ─────────────
@@ -245,10 +261,5 @@ export async function generateMarket({
   trackUsage("validator", getUsage(response));
 
   const text = getResponseText(response);
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("AI вернул невалидный ответ");
-  }
-
-  return JSON.parse(jsonMatch[0]);
+  return parseAIJson(text);
 }
