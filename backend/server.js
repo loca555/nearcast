@@ -95,6 +95,15 @@ app.listen(config.port, () => {
   } else {
     console.log("[oracle] Оракул не запущен — проверьте VENICE_API_KEY и NEARCAST_CONTRACT");
   }
+
+  // Пинг самого себя каждые 14 мин — не даём Render free tier заснуть
+  if (process.env.NODE_ENV === "production" || process.env.RENDER) {
+    const selfUrl = `http://localhost:${config.port}/api/health`;
+    setInterval(() => {
+      fetch(selfUrl).catch(() => {});
+    }, 14 * 60 * 1000);
+    console.log("[keep-alive] Автопинг каждые 14 мин включён");
+  }
 });
 
 // Graceful shutdown
