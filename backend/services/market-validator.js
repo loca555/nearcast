@@ -88,123 +88,141 @@ function parseAIJson(text) {
 export const SPORTS_CONFIG = {
   football: {
     label: "Футбол",
+    search: "Football Soccer",
     countries: {
       england: {
         label: "Англия",
+        search: "England",
         leagues: {
-          "premier-league": "Премьер-лига",
-          "championship": "Чемпионшип",
-          "fa-cup": "Кубок Англии",
-          "league-cup": "Кубок Лиги",
+          "premier-league": { label: "Премьер-лига", search: "English Premier League" },
+          "championship": { label: "Чемпионшип", search: "EFL Championship" },
+          "fa-cup": { label: "Кубок Англии", search: "FA Cup" },
+          "league-cup": { label: "Кубок Лиги", search: "EFL League Cup Carabao Cup" },
         },
       },
       spain: {
         label: "Испания",
+        search: "Spain",
         leagues: {
-          "la-liga": "Ла Лига",
-          "segunda": "Сегунда",
-          "copa-del-rey": "Кубок Короля",
+          "la-liga": { label: "Ла Лига", search: "La Liga" },
+          "segunda": { label: "Сегунда", search: "La Liga 2 Segunda Division" },
+          "copa-del-rey": { label: "Кубок Короля", search: "Copa del Rey" },
         },
       },
       germany: {
         label: "Германия",
+        search: "Germany",
         leagues: {
-          "bundesliga": "Бундеслига",
-          "2-bundesliga": "2. Бундеслига",
-          "dfb-pokal": "Кубок Германии",
+          "bundesliga": { label: "Бундеслига", search: "Bundesliga" },
+          "2-bundesliga": { label: "2. Бундеслига", search: "2. Bundesliga" },
+          "dfb-pokal": { label: "Кубок Германии", search: "DFB-Pokal" },
         },
       },
       italy: {
         label: "Италия",
+        search: "Italy",
         leagues: {
-          "serie-a": "Серия A",
-          "serie-b": "Серия B",
-          "coppa-italia": "Кубок Италии",
+          "serie-a": { label: "Серия A", search: "Serie A" },
+          "serie-b": { label: "Серия B", search: "Serie B" },
+          "coppa-italia": { label: "Кубок Италии", search: "Coppa Italia" },
         },
       },
       france: {
         label: "Франция",
+        search: "France",
         leagues: {
-          "ligue-1": "Лига 1",
-          "ligue-2": "Лига 2",
-          "coupe-de-france": "Кубок Франции",
+          "ligue-1": { label: "Лига 1", search: "Ligue 1" },
+          "ligue-2": { label: "Лига 2", search: "Ligue 2" },
+          "coupe-de-france": { label: "Кубок Франции", search: "Coupe de France" },
         },
       },
       europe: {
         label: "Еврокубки",
+        search: "Europe",
         leagues: {
-          "champions-league": "Лига Чемпионов",
-          "europa-league": "Лига Европы",
-          "conference-league": "Лига Конференций",
+          "champions-league": { label: "Лига Чемпионов", search: "UEFA Champions League" },
+          "europa-league": { label: "Лига Европы", search: "UEFA Europa League" },
+          "conference-league": { label: "Лига Конференций", search: "UEFA Conference League" },
         },
       },
       international: {
         label: "Сборные",
+        search: "International",
         leagues: {
-          "world-cup": "Чемпионат мира",
-          "euro": "Чемпионат Европы",
-          "nations-league": "Лига наций",
-          "friendlies": "Товарищеские",
+          "world-cup": { label: "Чемпионат мира", search: "FIFA World Cup" },
+          "euro": { label: "Чемпионат Европы", search: "UEFA Euro" },
+          "nations-league": { label: "Лига наций", search: "UEFA Nations League" },
+          "friendlies": { label: "Товарищеские", search: "International Friendlies" },
         },
       },
     },
   },
   basketball: {
     label: "Баскетбол",
+    search: "Basketball",
     countries: {
       usa: {
         label: "США",
+        search: "USA",
         leagues: {
-          "nba": "NBA",
-          "ncaa": "NCAA",
+          "nba": { label: "NBA", search: "NBA National Basketball Association" },
+          "ncaa": { label: "NCAA", search: "NCAA College Basketball" },
         },
       },
       europe: {
         label: "Европа",
+        search: "Europe",
         leagues: {
-          "euroleague": "Евролига",
+          "euroleague": { label: "Евролига", search: "EuroLeague Basketball" },
         },
       },
     },
   },
   tennis: {
     label: "Теннис",
+    search: "Tennis",
     countries: {
       international: {
         label: "Международный",
+        search: "International",
         leagues: {
-          "grand-slam": "Гранд Слэм",
-          "atp-1000": "ATP Masters 1000",
-          "wta-1000": "WTA 1000",
+          "grand-slam": { label: "Гранд Слэм", search: "Grand Slam Tennis" },
+          "atp-1000": { label: "ATP Masters 1000", search: "ATP Masters 1000" },
+          "wta-1000": { label: "WTA 1000", search: "WTA 1000" },
         },
       },
     },
   },
   mma: {
     label: "MMA",
+    search: "MMA Mixed Martial Arts",
     countries: {
       international: {
         label: "Международный",
+        search: "International",
         leagues: {
-          "ufc": "UFC",
-          "bellator": "Bellator",
+          "ufc": { label: "UFC", search: "UFC Ultimate Fighting Championship" },
+          "bellator": { label: "Bellator", search: "Bellator MMA" },
         },
       },
     },
   },
   hockey: {
     label: "Хоккей",
+    search: "Ice Hockey",
     countries: {
       usa: {
         label: "США/Канада",
+        search: "USA Canada",
         leagues: {
-          "nhl": "NHL",
+          "nhl": { label: "NHL", search: "NHL National Hockey League" },
         },
       },
       russia: {
         label: "Россия",
+        search: "Russia",
         leagues: {
-          "khl": "КХЛ",
+          "khl": { label: "КХЛ", search: "KHL Kontinental Hockey League" },
         },
       },
     },
@@ -222,11 +240,26 @@ export const MARKET_TYPES = {
 
 // ── AI: получить ближайшие матчи ─────────────────────────────
 
+// Хелпер: извлечь label и search из конфига лиги
+function getLeagueInfo(sport, country, league) {
+  const sportCfg = SPORTS_CONFIG[sport];
+  const countryCfg = sportCfg?.countries?.[country];
+  const leagueCfg = countryCfg?.leagues?.[league];
+  // Лига может быть объект {label, search} или строка (обратная совместимость)
+  const leagueLabel = typeof leagueCfg === "object" ? leagueCfg.label : (leagueCfg || league);
+  const leagueSearch = typeof leagueCfg === "object" ? leagueCfg.search : (leagueCfg || league);
+  return {
+    sportLabel: sportCfg?.label || sport,
+    sportSearch: sportCfg?.search || sport,
+    countryLabel: countryCfg?.label || country,
+    countrySearch: countryCfg?.search || country,
+    leagueLabel,
+    leagueSearch,
+  };
+}
+
 export async function getUpcomingMatches({ sport, country, league }) {
-  const sportLabel = SPORTS_CONFIG[sport]?.label || sport;
-  const countryData = SPORTS_CONFIG[sport]?.countries?.[country];
-  const countryLabel = countryData?.label || country;
-  const leagueLabel = countryData?.leagues?.[league] || league;
+  const info = getLeagueInfo(sport, country, league);
 
   const today = new Date().toISOString().split("T")[0];
   const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0];
@@ -236,24 +269,28 @@ export async function getUpcomingMatches({ sport, country, league }) {
   const cached = getCached(cacheKey, today);
   if (cached) return cached;
 
-  // Промпт на английском — лучше для web search (больше данных в сети)
-  const prompt = `Search for the current ${leagueLabel} fixtures schedule.
+  // Генерируем даты ближайших дней для более точного поиска
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(Date.now() + i * 86400000);
+    days.push(d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }));
+  }
 
-Find ALL ${leagueLabel} (${countryLabel}, ${sportLabel}) matches scheduled between ${today} and ${twoWeeks}.
+  // Полностью английский промпт для web search
+  const prompt = `${info.leagueSearch} schedule ${days[0]} to ${days[6]}.
 
-Return ONLY valid JSON:
-{
-  "matches": [
-    {"teamA": "Home Team", "teamB": "Away Team", "date": "2026-02-21T15:00:00Z", "round": "Matchweek 26"}
-  ],
-  "note": "source or explanation"
-}
+Search espn.com, flashscore.com, cbssports.com, bbc.com/sport for the ${info.leagueSearch} upcoming games.
+
+List all ${info.leagueSearch} games scheduled from ${today} to ${twoWeeks}. Include games on: ${days.join(", ")}.
+
+Return ONLY valid JSON (no markdown, no code blocks):
+{"matches": [{"teamA": "Home Team", "teamB": "Away Team", "date": "2026-02-21T15:00:00Z", "round": "Matchweek 26"}], "note": "source"}
 
 Rules:
-- Up to 15 matches, sorted by date
+- Up to 15 games, sorted by date
 - date in ISO 8601 UTC
 - Use real team names from the current season
-- round — matchweek, round, or stage
+- round — matchweek, round, game number, or stage
 - If exact schedule is unavailable, return {"matches": [], "note": "reason"}`;
 
   checkBudget();
@@ -283,17 +320,14 @@ export async function generateMarket({
   matchDate,
   marketType,
 }) {
-  const sportLabel = SPORTS_CONFIG[sport]?.label || sport;
-  const countryData = SPORTS_CONFIG[sport]?.countries?.[country];
-  const countryLabel = countryData?.label || country;
-  const leagueLabel = countryData?.leagues?.[league] || league;
+  const info = getLeagueInfo(sport, country, league);
   const marketTypeLabel = MARKET_TYPES[marketType] || marketType;
 
   const prompt = `Сгенерируй предсказательный рынок для матча.
 
 Матч: ${teamA} vs ${teamB}
 Дата: ${matchDate}
-Спорт: ${sportLabel}, ${leagueLabel} (${countryLabel})
+Спорт: ${info.sportLabel}, ${info.leagueLabel} (${info.countryLabel})
 Тип рынка: ${marketTypeLabel}
 
 Сформируй:

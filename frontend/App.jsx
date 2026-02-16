@@ -988,7 +988,7 @@ function CreateMarket({ account, onCreated, mob }) {
               <select style={{ ...styles.select, width: "100%" }} value={league} onChange={(e) => setLeague(e.target.value)} disabled={!country}>
                 <option value="">— Выберите —</option>
                 {leagues.map(([key, val]) => (
-                  <option key={key} value={key}>{val}</option>
+                  <option key={key} value={key}>{typeof val === "object" ? val.label : val}</option>
                 ))}
               </select>
             </div>
