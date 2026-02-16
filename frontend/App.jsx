@@ -47,12 +47,22 @@ const formatDate = (nanoTimestamp) => {
 const msToNano = (ms) => (BigInt(ms) * BigInt(1_000_000)).toString();
 
 const CATEGORIES = ["спорт"];
-const STATUS_LABELS = {
-  active: "Активный",
-  closed: "Закрыт",
-  resolved: "Разрешён",
-  cancelled: "Отменён",
+
+// Динамическая метка статуса с учётом winning outcome
+const getStatusLabel = (market) => {
+  if (!market) return "—";
+  const s = market.status;
+  if (s === "active") return "Активный";
+  if (s === "closed") return "In-play";
+  if (s === "resolved") {
+    const idx = market.resolvedOutcome;
+    const winner = idx != null && market.outcomes?.[idx];
+    return winner ? `Resolved: ${winner} won` : "Resolved";
+  }
+  if (s === "cancelled") return "Отменён";
+  return s;
 };
+
 const STATUS_COLORS = {
   active: "#22c55e",
   closed: "#f59e0b",
@@ -365,6 +375,12 @@ export default function App() {
             + Создать
           </button>
           <button
+            style={styles.navBtn(page === "resolved")}
+            onClick={() => setPage("resolved")}
+          >
+            Завершённые
+          </button>
+          <button
             style={styles.navBtn(page === "portfolio")}
             onClick={() => setPage("portfolio")}
           >
@@ -412,6 +428,12 @@ export default function App() {
             balance={balance}
             onBack={() => { setPage("markets"); loadMarkets(); }}
             onRefresh={() => { openMarket(selectedMarket.id); loadBalance(); }}
+            mob={mob}
+          />
+        )}
+        {page === "resolved" && (
+          <ResolvedMarkets
+            onOpen={openMarket}
             mob={mob}
           />
         )}
@@ -585,16 +607,19 @@ function MarketBrowser({
 
       {/* Фильтры по статусу */}
       <div style={styles.filters}>
-        {["все", "active", "closed", "resolved"].map((s) => (
+        {[
+          ["все", "Все"],
+          ["active", "Активный"],
+          ["closed", "In-play"],
+        ].map(([s, label]) => (
           <button
             key={s}
             style={styles.filterBtn(statusFilter === s)}
             onClick={() => setStatusFilter(s)}
           >
-            {s === "все" ? "Все" : STATUS_LABELS[s]}
+            {label}
           </button>
         ))}
-        {/* Только спорт — фильтр категории не нужен */}
       </div>
 
       {/* Список рынков */}
@@ -611,9 +636,9 @@ function MarketBrowser({
           onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#6366f1")}
           onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#334155")}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
             <span style={styles.badge(STATUS_COLORS[m.status] || "#94a3b8")}>
-              {STATUS_LABELS[m.status] || m.status}
+              {getStatusLabel(m)}
             </span>
             <span style={styles.badge("#94a3b8")}>{m.category}</span>
           </div>
@@ -686,9 +711,9 @@ function MarketDetail({ market, account, balance, onBack, onRefresh, mob }) {
       </button>
 
       <div style={{ ...styles.card, cursor: "default" }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <span style={styles.badge(STATUS_COLORS[market.status])}>
-            {STATUS_LABELS[market.status]}
+            {getStatusLabel(market)}
           </span>
           <span style={styles.badge("#94a3b8")}>{market.category}</span>
         </div>
@@ -1191,6 +1216,111 @@ function CreateMarket({ account, onCreated, mob }) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// ЗАВЕРШЁННЫЕ РЫНКИ
+// ══════════════════════════════════════════════════════════════
+
+function ResolvedMarkets({ onOpen, mob }) {
+  const [markets, setMarkets] = useState([]);
+  const [filter, setFilter] = useState("все"); // все | resolved | closed | cancelled
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        // Загружаем все рынки и фильтруем завершённые
+        const res = await fetch("/api/markets");
+        const data = await res.json();
+        const all = Array.isArray(data) ? data : [];
+        setMarkets(all.filter((m) => m.status === "resolved" || m.status === "closed" || m.status === "cancelled"));
+      } catch (err) {
+        console.error("Ошибка загрузки:", err);
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  const filtered = filter === "все" ? markets : markets.filter((m) => m.status === filter);
+
+  return (
+    <>
+      <h2 style={{ fontSize: 22, marginBottom: 20 }}>Завершённые рынки</h2>
+
+      <div style={styles.filters}>
+        {[
+          ["все", "Все"],
+          ["resolved", "Resolved"],
+          ["closed", "In-play"],
+          ["cancelled", "Отменённые"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            style={styles.filterBtn(filter === key)}
+            onClick={() => setFilter(key)}
+          >
+            {label}
+            {key !== "все" && (
+              <span style={{ marginLeft: 4, opacity: 0.6 }}>
+                ({markets.filter((m) => key === "все" || m.status === key).length})
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: "center", color: "#64748b", padding: 40 }}>Загрузка...</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign: "center", color: "#64748b", padding: 40 }}>
+          Завершённых рынков пока нет
+        </div>
+      ) : (
+        filtered.map((m) => {
+          const winnerIdx = m.resolvedOutcome;
+          const winner = winnerIdx != null && m.outcomes?.[winnerIdx];
+
+          return (
+            <div
+              key={m.id}
+              style={styles.card}
+              onClick={() => onOpen(m.id)}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#6366f1")}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#334155")}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
+                <span style={styles.badge(STATUS_COLORS[m.status] || "#94a3b8")}>
+                  {getStatusLabel(m)}
+                </span>
+                <span style={styles.badge("#94a3b8")}>{m.category}</span>
+              </div>
+              <div style={styles.cardTitle}>{m.question}</div>
+
+              {/* Показываем победителя для resolved */}
+              {winner && (
+                <div style={{
+                  display: "inline-block", padding: "4px 12px", borderRadius: 8, marginBottom: 8,
+                  background: "#22c55e18", border: "1px solid #22c55e44", color: "#22c55e",
+                  fontSize: 14, fontWeight: 600,
+                }}>
+                  {winner}
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: mob ? 8 : 20, color: "#94a3b8", fontSize: mob ? 12 : 13, flexWrap: "wrap" }}>
+                <span>Пул: {formatNear(m.totalPool)} NEAR</span>
+                <span>Ставок: {m.totalBets}</span>
+                <span>Исходов: {m.outcomes.length}</span>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
 // ПОРТФЕЛЬ
 // ══════════════════════════════════════════════════════════════
 
@@ -1271,7 +1401,7 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
           >
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={styles.badge(STATUS_COLORS[marketStatus] || "#94a3b8")}>
-                {STATUS_LABELS[marketStatus] || marketStatus}
+                {getStatusLabel(market || { status: marketStatus })}
               </span>
             </div>
             <div style={styles.cardTitle}>{marketQuestion}</div>
