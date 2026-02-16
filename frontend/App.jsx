@@ -999,7 +999,7 @@ function CreateMarket({ account, onCreated, mob }) {
             onClick={handleLoadMatches}
             disabled={loading}
           >
-            {loading ? "AI ищет матчи..." : "Показать ближайшие матчи"}
+            {loading ? "Загрузка расписания..." : "Показать ближайшие матчи"}
           </button>
 
           {message && (
@@ -1047,7 +1047,7 @@ function CreateMarket({ account, onCreated, mob }) {
                   <div>
                     <div style={{ fontWeight: 600, fontSize: mob ? 14 : 15 }}>
                       {isSelected && <span style={{ color: "#6366f1" }}>● </span>}
-                      {m.teamA} — {m.teamB}
+                      {m.teamB ? `${m.teamA} — ${m.teamB}` : m.teamA}
                     </div>
                     {m.round && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{m.round}</div>}
                   </div>

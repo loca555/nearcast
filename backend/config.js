@@ -30,6 +30,11 @@ export default {
     budgetLimit: parseFloat(process.env.API_BUDGET_LIMIT || "5"),
   },
 
+  // API-Sports (расписание матчей)
+  apiSports: {
+    apiKey: process.env.API_SPORTS_KEY || "",
+  },
+
   // Venice AI API (OpenAI-совместимый)
   ai: {
     apiKey: process.env.VENICE_API_KEY || "",

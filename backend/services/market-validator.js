@@ -9,6 +9,7 @@ import Database from "better-sqlite3";
 import config from "../config.js";
 import { chatCompletion, getResponseText, getUsage } from "./ai-client.js";
 import { checkBudget, trackUsage } from "./spending-tracker.js";
+import { fetchESPNMatches } from "./sports-api.js";
 
 // ── Кэш матчей (SQLite, по UTC-дню) ────────────────────────
 
@@ -92,67 +93,106 @@ export const SPORTS_CONFIG = {
     countries: {
       england: {
         label: "Англия",
-        search: "England",
         leagues: {
-          "premier-league": { label: "Премьер-лига", search: "English Premier League" },
-          "championship": { label: "Чемпионшип", search: "EFL Championship" },
-          "fa-cup": { label: "Кубок Англии", search: "FA Cup" },
-          "league-cup": { label: "Кубок Лиги", search: "EFL League Cup Carabao Cup" },
+          "premier-league": { label: "Премьер-лига", espn: "soccer/eng.1", search: "English Premier League" },
+          "championship": { label: "Чемпионшип", espn: "soccer/eng.2", search: "EFL Championship" },
+          "league-one": { label: "Лига 1", espn: "soccer/eng.3", search: "English League One" },
+          "league-two": { label: "Лига 2", espn: "soccer/eng.4", search: "English League Two" },
+          "fa-cup": { label: "Кубок Англии", espn: "soccer/eng.fa", search: "FA Cup" },
+          "league-cup": { label: "Кубок Лиги", espn: "soccer/eng.league_cup", search: "Carabao Cup" },
         },
       },
       spain: {
         label: "Испания",
-        search: "Spain",
         leagues: {
-          "la-liga": { label: "Ла Лига", search: "La Liga" },
-          "segunda": { label: "Сегунда", search: "La Liga 2 Segunda Division" },
-          "copa-del-rey": { label: "Кубок Короля", search: "Copa del Rey" },
+          "la-liga": { label: "Ла Лига", espn: "soccer/esp.1", search: "La Liga" },
+          "segunda": { label: "Сегунда", espn: "soccer/esp.2", search: "La Liga 2" },
+          "copa-del-rey": { label: "Кубок Короля", espn: "soccer/esp.copa_del_rey", search: "Copa del Rey" },
         },
       },
       germany: {
         label: "Германия",
-        search: "Germany",
         leagues: {
-          "bundesliga": { label: "Бундеслига", search: "Bundesliga" },
-          "2-bundesliga": { label: "2. Бундеслига", search: "2. Bundesliga" },
-          "dfb-pokal": { label: "Кубок Германии", search: "DFB-Pokal" },
+          "bundesliga": { label: "Бундеслига", espn: "soccer/ger.1", search: "Bundesliga" },
+          "2-bundesliga": { label: "2. Бундеслига", espn: "soccer/ger.2", search: "2. Bundesliga" },
+          "dfb-pokal": { label: "Кубок Германии", espn: "soccer/ger.dfb_pokal", search: "DFB-Pokal" },
         },
       },
       italy: {
         label: "Италия",
-        search: "Italy",
         leagues: {
-          "serie-a": { label: "Серия A", search: "Serie A" },
-          "serie-b": { label: "Серия B", search: "Serie B" },
-          "coppa-italia": { label: "Кубок Италии", search: "Coppa Italia" },
+          "serie-a": { label: "Серия A", espn: "soccer/ita.1", search: "Serie A" },
+          "serie-b": { label: "Серия B", espn: "soccer/ita.2", search: "Serie B" },
+          "coppa-italia": { label: "Кубок Италии", espn: "soccer/ita.coppa_italia", search: "Coppa Italia" },
         },
       },
       france: {
         label: "Франция",
-        search: "France",
         leagues: {
-          "ligue-1": { label: "Лига 1", search: "Ligue 1" },
-          "ligue-2": { label: "Лига 2", search: "Ligue 2" },
-          "coupe-de-france": { label: "Кубок Франции", search: "Coupe de France" },
+          "ligue-1": { label: "Лига 1", espn: "soccer/fra.1", search: "Ligue 1" },
+          "ligue-2": { label: "Лига 2", espn: "soccer/fra.2", search: "Ligue 2" },
+          "coupe-de-france": { label: "Кубок Франции", espn: "soccer/fra.coupe_de_france", search: "Coupe de France" },
+        },
+      },
+      netherlands: {
+        label: "Нидерланды",
+        leagues: {
+          "eredivisie": { label: "Эредивизи", espn: "soccer/ned.1", search: "Eredivisie" },
+        },
+      },
+      portugal: {
+        label: "Португалия",
+        leagues: {
+          "primeira": { label: "Примейра-лига", espn: "soccer/por.1", search: "Primeira Liga" },
+        },
+      },
+      turkey: {
+        label: "Турция",
+        leagues: {
+          "super-lig": { label: "Суперлига", espn: "soccer/tur.1", search: "Turkish Super Lig" },
+        },
+      },
+      scotland: {
+        label: "Шотландия",
+        leagues: {
+          "premiership": { label: "Премьершип", espn: "soccer/sco.1", search: "Scottish Premiership" },
+        },
+      },
+      belgium: {
+        label: "Бельгия",
+        leagues: {
+          "pro-league": { label: "Про-Лига", espn: "soccer/bel.1", search: "Belgian Pro League" },
         },
       },
       europe: {
         label: "Еврокубки",
-        search: "Europe",
         leagues: {
-          "champions-league": { label: "Лига Чемпионов", search: "UEFA Champions League" },
-          "europa-league": { label: "Лига Европы", search: "UEFA Europa League" },
-          "conference-league": { label: "Лига Конференций", search: "UEFA Conference League" },
+          "champions-league": { label: "Лига Чемпионов", espn: "soccer/uefa.champions", search: "UEFA Champions League" },
+          "europa-league": { label: "Лига Европы", espn: "soccer/uefa.europa", search: "UEFA Europa League" },
+          "conference-league": { label: "Лига Конференций", espn: "soccer/uefa.europa.conf", search: "UEFA Conference League" },
         },
       },
       international: {
         label: "Сборные",
-        search: "International",
         leagues: {
-          "world-cup": { label: "Чемпионат мира", search: "FIFA World Cup" },
-          "euro": { label: "Чемпионат Европы", search: "UEFA Euro" },
-          "nations-league": { label: "Лига наций", search: "UEFA Nations League" },
-          "friendlies": { label: "Товарищеские", search: "International Friendlies" },
+          "world-cup": { label: "Чемпионат мира", espn: "soccer/fifa.world", search: "FIFA World Cup" },
+          "euro": { label: "Чемпионат Европы", espn: "soccer/uefa.euro", search: "UEFA Euro" },
+          "nations-league": { label: "Лига наций", espn: "soccer/uefa.nations", search: "UEFA Nations League" },
+          "friendlies": { label: "Товарищеские", espn: "soccer/fifa.friendly", search: "International Friendlies" },
+        },
+      },
+      "south-america": {
+        label: "Южная Америка",
+        leagues: {
+          "brasileirao": { label: "Бразилейрао", espn: "soccer/bra.1", search: "Brasileirao" },
+          "argentina": { label: "Примера Аргентины", espn: "soccer/arg.1", search: "Argentine Primera Division" },
+        },
+      },
+      "north-america": {
+        label: "Северная Америка",
+        leagues: {
+          "mls": { label: "MLS", espn: "soccer/usa.1", search: "Major League Soccer" },
+          "liga-mx": { label: "Лига MX", espn: "soccer/mex.1", search: "Liga MX" },
         },
       },
     },
@@ -163,32 +203,46 @@ export const SPORTS_CONFIG = {
     countries: {
       usa: {
         label: "США",
-        search: "USA",
         leagues: {
-          "nba": { label: "NBA", search: "NBA National Basketball Association" },
-          "ncaa": { label: "NCAA", search: "NCAA College Basketball" },
-        },
-      },
-      europe: {
-        label: "Европа",
-        search: "Europe",
-        leagues: {
-          "euroleague": { label: "Евролига", search: "EuroLeague Basketball" },
+          "nba": { label: "NBA", espn: "basketball/nba", search: "NBA" },
+          "wnba": { label: "WNBA", espn: "basketball/wnba", search: "WNBA" },
         },
       },
     },
   },
-  tennis: {
-    label: "Теннис",
-    search: "Tennis",
+  hockey: {
+    label: "Хоккей",
+    search: "Ice Hockey",
     countries: {
-      international: {
-        label: "Международный",
-        search: "International",
+      "north-america": {
+        label: "США/Канада",
         leagues: {
-          "grand-slam": { label: "Гранд Слэм", search: "Grand Slam Tennis" },
-          "atp-1000": { label: "ATP Masters 1000", search: "ATP Masters 1000" },
-          "wta-1000": { label: "WTA 1000", search: "WTA 1000" },
+          "nhl": { label: "NHL", espn: "hockey/nhl", search: "NHL" },
+        },
+      },
+    },
+  },
+  "american-football": {
+    label: "Американский футбол",
+    search: "American Football",
+    countries: {
+      usa: {
+        label: "США",
+        leagues: {
+          "nfl": { label: "NFL", espn: "football/nfl", search: "NFL" },
+          "ncaa-football": { label: "NCAA Football", espn: "football/college-football", search: "NCAA College Football" },
+        },
+      },
+    },
+  },
+  baseball: {
+    label: "Бейсбол",
+    search: "Baseball",
+    countries: {
+      usa: {
+        label: "США",
+        leagues: {
+          "mlb": { label: "MLB", espn: "baseball/mlb", search: "MLB" },
         },
       },
     },
@@ -199,30 +253,33 @@ export const SPORTS_CONFIG = {
     countries: {
       international: {
         label: "Международный",
-        search: "International",
         leagues: {
-          "ufc": { label: "UFC", search: "UFC Ultimate Fighting Championship" },
-          "bellator": { label: "Bellator", search: "Bellator MMA" },
+          "ufc": { label: "UFC", espn: "mma/ufc", search: "UFC" },
         },
       },
     },
   },
-  hockey: {
-    label: "Хоккей",
-    search: "Ice Hockey",
+  tennis: {
+    label: "Теннис",
+    search: "Tennis",
     countries: {
-      usa: {
-        label: "США/Канада",
-        search: "USA Canada",
+      international: {
+        label: "Международный",
         leagues: {
-          "nhl": { label: "NHL", search: "NHL National Hockey League" },
+          "atp": { label: "ATP", espn: "tennis/atp", search: "ATP Tour" },
+          "wta": { label: "WTA", espn: "tennis/wta", search: "WTA Tour" },
         },
       },
-      russia: {
-        label: "Россия",
-        search: "Russia",
+    },
+  },
+  racing: {
+    label: "Автоспорт",
+    search: "Motorsport Racing",
+    countries: {
+      international: {
+        label: "Международный",
         leagues: {
-          "khl": { label: "КХЛ", search: "KHL Kontinental Hockey League" },
+          "f1": { label: "Формула 1", espn: "racing/f1", search: "Formula 1" },
         },
       },
     },
@@ -240,21 +297,21 @@ export const MARKET_TYPES = {
 
 // ── AI: получить ближайшие матчи ─────────────────────────────
 
-// Хелпер: извлечь label и search из конфига лиги
+// Хелпер: извлечь label, search и espn из конфига лиги
 function getLeagueInfo(sport, country, league) {
   const sportCfg = SPORTS_CONFIG[sport];
   const countryCfg = sportCfg?.countries?.[country];
   const leagueCfg = countryCfg?.leagues?.[league];
-  // Лига может быть объект {label, search} или строка (обратная совместимость)
   const leagueLabel = typeof leagueCfg === "object" ? leagueCfg.label : (leagueCfg || league);
   const leagueSearch = typeof leagueCfg === "object" ? leagueCfg.search : (leagueCfg || league);
+  const espnPath = typeof leagueCfg === "object" ? leagueCfg.espn : null;
   return {
     sportLabel: sportCfg?.label || sport,
     sportSearch: sportCfg?.search || sport,
     countryLabel: countryCfg?.label || country,
-    countrySearch: countryCfg?.search || country,
     leagueLabel,
     leagueSearch,
+    espnPath,
   };
 }
 
@@ -269,7 +326,35 @@ export async function getUpcomingMatches({ sport, country, league }) {
   const cached = getCached(cacheKey, today);
   if (cached) return cached;
 
-  // Полностью английский промпт для web search
+  let result;
+
+  // ESPN API — основной источник расписания
+  if (info.espnPath) {
+    try {
+      const matches = await fetchESPNMatches(info.espnPath, today, endDate);
+      result = { matches: matches || [], note: "ESPN" };
+      console.log(`[validator] ESPN: ${result.matches.length} событий для ${info.leagueLabel}`);
+    } catch (err) {
+      console.error(`[validator] ESPN ошибка, fallback на AI:`, err.message);
+      result = await fetchMatchesViaAI(info, today, endDate);
+    }
+  } else {
+    // Нет ESPN пути — AI fallback
+    console.log(`[validator] ${info.sportLabel}/${info.leagueLabel} — AI fallback`);
+    result = await fetchMatchesViaAI(info, today, endDate);
+  }
+
+  // Кэшируем только если есть матчи
+  if (result.matches && result.matches.length > 0) {
+    setCache(cacheKey, today, result);
+  }
+
+  return result;
+}
+
+// ── AI fallback для неподдерживаемых видов спорта ─────────────
+
+async function fetchMatchesViaAI(info, today, endDate) {
   const prompt = `Search for ${info.leagueSearch} schedule and fixtures from ${today} to ${endDate}.
 
 Find ALL ${info.leagueSearch} games/matches scheduled in this 7-day period (${today} to ${endDate}).
@@ -290,14 +375,7 @@ Rules:
   trackUsage("validator", getUsage(response));
 
   const text = getResponseText(response);
-  const result = parseAIJson(text);
-
-  // Кэшируем только если есть матчи
-  if (result.matches && result.matches.length > 0) {
-    setCache(cacheKey, today, result);
-  }
-
-  return result;
+  return parseAIJson(text);
 }
 
 // ── AI: сгенерировать рынок для выбранного матча ─────────────
