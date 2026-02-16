@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+backend/public/
+
+.env
+.env.*
+*.db
+*.db-shm
+*.db-wal
+
+package-lock.json
+
+.vite/
+*.wasm
