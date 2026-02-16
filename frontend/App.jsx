@@ -180,14 +180,14 @@ const formatNear = (yocto) => {
 
 const msToNano = (ms) => (BigInt(ms) * BigInt(1_000_000)).toString();
 
-function formatDate(nanoTimestamp, locale) {
+function formatDate(nanoTimestamp) {
   if (!nanoTimestamp || nanoTimestamp === "0") return "—";
   const ms = Number(BigInt(nanoTimestamp) / BigInt(1_000_000));
-  return new Date(ms).toLocaleString(locale);
+  return new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function formatMatchDate(iso, locale) {
-  try { return new Date(iso).toLocaleString(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
+function formatMatchDate(iso) {
+  try { return new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); }
   catch { return iso; }
 }
 
@@ -250,8 +250,6 @@ export default function App() {
   const t = TRANSLATIONS[lang];
   const th = THEMES[theme];
   const S = getStyles(th);
-  const locale = lang === "ru" ? "ru-RU" : "en-US";
-
   useEffect(() => { localStorage.setItem("nc-lang", lang); }, [lang]);
   useEffect(() => { localStorage.setItem("nc-theme", theme); }, [theme]);
 
@@ -340,7 +338,7 @@ export default function App() {
 
   // ── Рендер ──────────────────────────────────────────────────
 
-  const ctx = { t, th, S, lang, locale, mob };
+  const ctx = { t, th, S, lang, mob };
 
   return (
     <AppContext.Provider value={ctx}>
@@ -482,7 +480,7 @@ function BalancePanel({ balance, onUpdate }) {
 // ══════════════════════════════════════════════════════════════
 
 function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }) {
-  const { t, th, S, locale, mob } = useApp();
+  const { t, th, S, lang, mob } = useApp();
   return (
     <>
       {stats && (
@@ -520,7 +518,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
             <span>{t.market.pool}: {formatNear(m.totalPool)} NEAR</span>
             <span>{t.market.bets}: {m.totalBets}</span>
             {!mob && <span>{t.market.outcomes}: {m.outcomes.length}</span>}
-            <span>{t.market.until}: {formatDate(m.betsEndDate, locale)}</span>
+            <span>{t.market.until}: {formatDate(m.betsEndDate)}</span>
           </div>
         </div>
       ))}
@@ -533,7 +531,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
 // ══════════════════════════════════════════════════════════════
 
 function MarketDetail({ market, account, balance, onBack, onRefresh }) {
-  const { t, th, S, locale, mob } = useApp();
+  const { t, th, S, lang, mob } = useApp();
   const [betAmount, setBetAmount] = useState("1");
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -575,8 +573,8 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
         <div style={{ display: "flex", gap: mob ? 8 : 24, color: th.muted, fontSize: mob ? 12 : 13, marginBottom: 20, flexWrap: "wrap" }}>
           <span>{t.market.pool}: <b style={{ color: th.accent }}>{formatNear(market.totalPool)} NEAR</b></span>
           <span>{t.market.bets}: {market.totalBets}</span>
-          <span>{t.market.until}: {formatDate(market.betsEndDate, locale)}</span>
-          <span>{t.market.resolution}: {formatDate(market.resolutionDate, locale)}</span>
+          <span>{t.market.until}: {formatDate(market.betsEndDate)}</span>
+          <span>{t.market.resolution}: {formatDate(market.resolutionDate)}</span>
         </div>
 
         <h3 style={{ fontSize: 16, marginBottom: 12 }}>{t.market.outcomesTitle}</h3>
@@ -642,7 +640,7 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
 // ══════════════════════════════════════════════════════════════
 
 function CreateMarket({ account, onCreated }) {
-  const { t, th, S, locale, mob } = useApp();
+  const { t, th, S, lang, mob } = useApp();
   const [step, setStep] = useState("league");
   const [sportsConfig, setSportsConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -684,7 +682,7 @@ function CreateMarket({ account, onCreated }) {
     setLoading(true); setMessage("");
     try {
       const res = await fetch("/api/generate-market", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sport, country, league, teamA: selectedMatch.teamA, teamB: selectedMatch.teamB, matchDate: selectedMatch.date, marketType }) });
+        body: JSON.stringify({ sport, country, league, teamA: selectedMatch.teamA, teamB: selectedMatch.teamB, matchDate: selectedMatch.date, marketType, lang }) });
       const data = await res.json();
       if (data.error) { setMessage(data.error); setLoading(false); return; }
       setAiResult(data); setStep("confirm");
@@ -741,21 +739,21 @@ function CreateMarket({ account, onCreated }) {
               <label style={{ fontSize: 13, color: th.muted }}>{t.create.sport}</label>
               <select style={{ ...S.select, width: "100%" }} value={sport} onChange={(e) => handleSportChange(e.target.value)}>
                 <option value="">{t.create.select}</option>
-                {sportsList.map(([key, val]) => <option key={key} value={key}>{val.label}</option>)}
+                {sportsList.map(([key, val]) => <option key={key} value={key}>{lang === "en" && val.labelEn ? val.labelEn : val.label}</option>)}
               </select>
             </div>
             <div style={{ flex: "1 1 200px" }}>
               <label style={{ fontSize: 13, color: th.muted }}>{t.create.country}</label>
               <select style={{ ...S.select, width: "100%" }} value={country} onChange={(e) => handleCountryChange(e.target.value)} disabled={!sport}>
                 <option value="">{t.create.select}</option>
-                {countries.map(([key, val]) => <option key={key} value={key}>{val.label}</option>)}
+                {countries.map(([key, val]) => <option key={key} value={key}>{lang === "en" && val.labelEn ? val.labelEn : val.label}</option>)}
               </select>
             </div>
             <div style={{ flex: "1 1 200px" }}>
               <label style={{ fontSize: 13, color: th.muted }}>{t.create.league}</label>
               <select style={{ ...S.select, width: "100%" }} value={league} onChange={(e) => setLeague(e.target.value)} disabled={!country}>
                 <option value="">{t.create.select}</option>
-                {leagues.map(([key, val]) => <option key={key} value={key}>{typeof val === "object" ? val.label : val}</option>)}
+                {leagues.map(([key, val]) => <option key={key} value={key}>{typeof val === "object" ? (lang === "en" && val.labelEn ? val.labelEn : val.label) : val}</option>)}
               </select>
             </div>
           </div>
@@ -798,7 +796,7 @@ function CreateMarket({ account, onCreated }) {
                     {m.round && <div style={{ fontSize: 12, color: th.muted, marginTop: 2 }}>{m.round}</div>}
                   </div>
                   <div style={{ fontSize: mob ? 12 : 14, color: th.accent, fontWeight: 500, whiteSpace: "nowrap" }}>
-                    {formatMatchDate(m.date, locale)}
+                    {formatMatchDate(m.date)}
                   </div>
                 </div>
               );
@@ -818,16 +816,16 @@ function CreateMarket({ account, onCreated }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h3 style={{ fontSize: mob ? 14 : 16, margin: 0 }}>
               {selectedMatch.teamA} — {selectedMatch.teamB}
-              {!mob && <span style={{ color: th.accent, fontSize: 14, fontWeight: 400, marginLeft: 12 }}>{formatMatchDate(selectedMatch.date, locale)}</span>}
-              {mob && <div style={{ color: th.accent, fontSize: 12, fontWeight: 400, marginTop: 4 }}>{formatMatchDate(selectedMatch.date, locale)}</div>}
+              {!mob && <span style={{ color: th.accent, fontSize: 14, fontWeight: 400, marginLeft: 12 }}>{formatMatchDate(selectedMatch.date)}</span>}
+              {mob && <div style={{ color: th.accent, fontSize: 12, fontWeight: 400, marginTop: 4 }}>{formatMatchDate(selectedMatch.date)}</div>}
             </h3>
             <button style={S.secondaryBtn} onClick={() => { setStep("matches"); setMessage(""); }}>{t.create.back}</button>
           </div>
           <label style={{ fontSize: 13, color: th.muted }}>{t.create.selectMarketType}</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, marginBottom: 16 }}>
-            {marketTypes.map(([key, label]) => (
+            {marketTypes.map(([key, val]) => (
               <button key={key} style={{ padding: "10px 18px", background: marketType === key ? th.accentBg : th.inputBg, color: marketType === key ? "#fff" : th.muted, border: `1px solid ${marketType === key ? th.accentBg : th.cardBorder}`, borderRadius: 8, cursor: "pointer", fontSize: 14 }}
-                onClick={() => setMarketType(key)}>{label}</button>
+                onClick={() => setMarketType(key)}>{typeof val === "object" ? (lang === "en" ? val.en : val.ru) : val}</button>
             ))}
           </div>
           <button style={{ ...S.primaryBtn, opacity: loading ? 0.5 : 1 }} onClick={handleGenerate} disabled={loading}>
@@ -849,8 +847,8 @@ function CreateMarket({ account, onCreated }) {
             ))}
           </div>
           <div style={{ display: "flex", gap: 24, marginBottom: 16, fontSize: 14, flexWrap: "wrap" }}>
-            <div><span style={{ color: th.muted }}>{t.create.betsUntil} </span><b>{new Date(aiResult.betsEndDate).toLocaleString(locale)}</b></div>
-            <div><span style={{ color: th.muted }}>{t.create.resolution} </span><b>{new Date(aiResult.resolutionDate).toLocaleString(locale)}</b></div>
+            <div><span style={{ color: th.muted }}>{t.create.betsUntil} </span><b>{new Date(aiResult.betsEndDate).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b></div>
+            <div><span style={{ color: th.muted }}>{t.create.resolution} </span><b>{new Date(aiResult.resolutionDate).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b></div>
           </div>
           <div style={{ display: "flex", gap: 12 }}>
             <button style={S.secondaryBtn} onClick={() => { setStep("market"); setAiResult(null); setMessage(""); }}>{t.create.back}</button>
@@ -872,7 +870,7 @@ function CreateMarket({ account, onCreated }) {
 // ══════════════════════════════════════════════════════════════
 
 function ResolvedMarkets({ onOpen }) {
-  const { t, th, S, locale, mob } = useApp();
+  const { t, th, S, lang, mob } = useApp();
   const [markets, setMarkets] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);

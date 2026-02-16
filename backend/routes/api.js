@@ -133,14 +133,14 @@ router.post("/upcoming-matches", async (req, res, next) => {
 // AI: сгенерировать рынок для выбранного матча + типа
 router.post("/generate-market", async (req, res, next) => {
   try {
-    const { sport, country, league, teamA, teamB, matchDate, marketType } = req.body;
+    const { sport, country, league, teamA, teamB, matchDate, marketType, lang } = req.body;
 
     if (!sport || !country || !league || !teamA || !teamB || !matchDate || !marketType) {
       return res.status(400).json({ error: "Заполните все обязательные поля" });
     }
 
     const result = await generateMarket({
-      sport, country, league, teamA, teamB, matchDate, marketType,
+      sport, country, league, teamA, teamB, matchDate, marketType, lang: lang || "ru",
     });
     res.json(result);
   } catch (err) {
