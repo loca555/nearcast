@@ -262,26 +262,17 @@ export async function getUpcomingMatches({ sport, country, league }) {
   const info = getLeagueInfo(sport, country, league);
 
   const today = new Date().toISOString().split("T")[0];
-  const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0];
+  const endDate = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
 
   // Проверяем кэш (по UTC-дню)
   const cacheKey = `matches:${sport}:${country}:${league}`;
   const cached = getCached(cacheKey, today);
   if (cached) return cached;
 
-  // Генерируем даты ближайших дней для более точного поиска
-  const days = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(Date.now() + i * 86400000);
-    days.push(d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }));
-  }
-
   // Полностью английский промпт для web search
-  const prompt = `${info.leagueSearch} schedule ${days[0]} to ${days[6]}.
+  const prompt = `Search for ${info.leagueSearch} schedule and fixtures from ${today} to ${endDate}.
 
-Search espn.com, flashscore.com, cbssports.com, bbc.com/sport for the ${info.leagueSearch} upcoming games.
-
-List all ${info.leagueSearch} games scheduled from ${today} to ${twoWeeks}. Include games on: ${days.join(", ")}.
+Find ALL ${info.leagueSearch} games/matches scheduled in this 7-day period (${today} to ${endDate}).
 
 Return ONLY valid JSON (no markdown, no code blocks):
 {"matches": [{"teamA": "Home Team", "teamB": "Away Team", "date": "2026-02-21T15:00:00Z", "round": "Matchweek 26"}], "note": "source"}
@@ -289,7 +280,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
 Rules:
 - Up to 15 games, sorted by date
 - date in ISO 8601 UTC
-- Use real team names from the current season
+- Use real team/club names from the current season
 - round — matchweek, round, game number, or stage
 - If exact schedule is unavailable, return {"matches": [], "note": "reason"}`;
 
