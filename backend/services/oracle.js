@@ -44,28 +44,29 @@ async function askAI(market) {
     .map((o, i) => `  ${i}: "${o}"`)
     .join("\n");
 
-  const prompt = `Ты — AI-оракул для предсказательного рынка. Твоя задача — определить исход события на основе доступной информации.
+  // Английский промпт — лучше для web search при поиске результатов матчей
+  const prompt = `You are an AI oracle for a prediction market. Determine the outcome of this event using available information.
 
-ВОПРОС РЫНКА: "${market.question}"
+MARKET QUESTION: "${market.question}"
 
-ОПИСАНИЕ: "${market.description}"
+DESCRIPTION: "${market.description}"
 
-ВАРИАНТЫ ИСХОДОВ:
+POSSIBLE OUTCOMES:
 ${outcomesText}
 
-КАТЕГОРИЯ: ${market.category}
+CATEGORY: ${market.category}
 
-ИНСТРУКЦИИ:
-1. Проанализируй вопрос и определи, какой исход наиболее вероятно произошёл
-2. Если событие уже произошло и результат известен — выбери правильный ответ
-3. Если результат неоднозначен или событие не произошло — выбери наиболее вероятный вариант
-4. Ответь СТРОГО в формате JSON
+INSTRUCTIONS:
+1. Search for the actual result of this event
+2. If the event has already happened and the result is known — pick the correct outcome
+3. If the result is ambiguous or the event hasn't happened — pick the most likely outcome
+4. Respond STRICTLY in JSON format
 
-ФОРМАТ ОТВЕТА (только JSON, ничего больше):
+RESPONSE FORMAT (JSON only, nothing else):
 {
-  "winning_outcome": <номер исхода от 0 до ${market.outcomes.length - 1}>,
-  "confidence": <уверенность от 0.0 до 1.0>,
-  "reasoning": "<объяснение на русском, 1-3 предложения>"
+  "winning_outcome": <outcome number from 0 to ${market.outcomes.length - 1}>,
+  "confidence": <confidence from 0.0 to 1.0>,
+  "reasoning": "<explanation in Russian, 1-3 sentences>"
 }`;
 
   checkBudget();

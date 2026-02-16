@@ -157,33 +157,25 @@ export async function getUpcomingMatches({ sport, country, league }) {
   const today = new Date().toISOString().split("T")[0];
   const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0];
 
-  const prompt = `Ты — спортивный справочник. Верни список ближайших матчей.
+  // Промпт на английском — лучше для web search (больше данных в сети)
+  const prompt = `Search for the current ${leagueLabel} fixtures schedule.
 
-Спорт: ${sportLabel}
-Страна/Регион: ${countryLabel}
-Лига/Турнир: ${leagueLabel}
-Период: с ${today} по ${twoWeeks} (2 недели вперёд)
+Find ALL ${leagueLabel} (${countryLabel}, ${sportLabel}) matches scheduled between ${today} and ${twoWeeks}.
 
-Верни ВСЕ запланированные матчи на этот период. Если точное расписание неизвестно — предложи наиболее вероятные матчи текущего тура/раунда.
-
-ОТВЕТ СТРОГО В JSON (массив):
+Return ONLY valid JSON:
 {
   "matches": [
-    {
-      "teamA": "Arsenal",
-      "teamB": "Chelsea",
-      "date": "2026-02-20T20:00:00Z",
-      "round": "25 тур"
-    }
+    {"teamA": "Home Team", "teamB": "Away Team", "date": "2026-02-21T15:00:00Z", "round": "Matchweek 26"}
   ],
-  "note": "пояснение если есть"
+  "note": "source or explanation"
 }
 
-Правила:
-- Верни до 15 матчей, отсортированных по дате
-- date в формате ISO 8601 UTC
-- round — тур, раунд, этап (если применимо)
-- Если сезон закончился или лига на паузе — верни {"matches": [], "note": "причина"}`;
+Rules:
+- Up to 15 matches, sorted by date
+- date in ISO 8601 UTC
+- Use real team names from the current season
+- round — matchweek, round, or stage
+- If exact schedule is unavailable, return {"matches": [], "note": "reason"}`;
 
   checkBudget();
 

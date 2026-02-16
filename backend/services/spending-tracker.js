@@ -12,6 +12,7 @@ let db = null;
 
 // Цены Venice AI ($ за 1M токенов) — актуальные на февраль 2026
 const MODEL_PRICING = {
+  "openai-gpt-oss-120b": { input: 0.07, output: 0.30 },
   "qwen3-235b-a22b-instruct-2507": { input: 0.15, output: 0.75 },
   "qwen3-235b-a22b-thinking-2507": { input: 0.45, output: 3.50 },
   "deepseek-v3.2":    { input: 0.40, output: 1.00 },
