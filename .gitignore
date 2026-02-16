@@ -10,6 +10,7 @@ backend/public/
 *.db-wal
 
 package-lock.json
+CLAUDE.md
 
 .vite/
 *.wasm
