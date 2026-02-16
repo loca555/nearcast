@@ -12,13 +12,16 @@ let db = null;
 
 // Цены Venice AI ($ за 1M токенов) — актуальные на февраль 2026
 const MODEL_PRICING = {
+  "claude-sonnet-45":  { input: 3.75, output: 18.75 },
+  "claude-opus-4-6":   { input: 6.00, output: 30.00 },
+  "claude-opus-45":    { input: 6.00, output: 30.00 },
+  "gemini-3-flash-preview": { input: 0.70, output: 3.75 },
+  "gemini-3-pro-preview": { input: 2.50, output: 15.00 },
+  "openai-gpt-52":     { input: 2.19, output: 17.50 },
   "openai-gpt-oss-120b": { input: 0.07, output: 0.30 },
-  "qwen3-235b-a22b-instruct-2507": { input: 0.15, output: 0.75 },
-  "qwen3-235b-a22b-thinking-2507": { input: 0.45, output: 3.50 },
-  "deepseek-v3.2":    { input: 0.40, output: 1.00 },
-  "llama-3.3-70b":    { input: 0.70, output: 2.80 },
-  "google-gemma-3-27b-it": { input: 0.12, output: 0.20 },
-  "grok-41-fast":     { input: 0.50, output: 1.25 },
+  "deepseek-v3.2":     { input: 0.40, output: 1.00 },
+  "grok-41-fast":      { input: 0.50, output: 1.25 },
+  "kimi-k2-5":         { input: 0.75, output: 3.75 },
 };
 
 // Цена по умолчанию

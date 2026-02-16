@@ -75,16 +75,26 @@ RESPONSE FORMAT (JSON only, nothing else):
   trackUsage("oracle", getUsage(response));
 
   const text = getResponseText(response);
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  // Убираем markdown code blocks
+  let cleaned = text.replace(/```\w*\n?/g, "").trim();
+
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error(`AI вернул невалидный ответ: ${text}`);
+    console.error("[oracle] Нет JSON в ответе AI:", text.slice(0, 500));
+    throw new Error("AI вернул невалидный ответ: " + text.slice(0, 200));
   }
 
   let raw = jsonMatch[0];
   // Убираем trailing commas и комментарии
   raw = raw.replace(/,\s*([\]}])/g, "$1");
   raw = raw.replace(/\/\/[^\n]*/g, "");
-  return JSON.parse(raw);
+
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    const retry = raw.replace(/[\x00-\x1f]/g, " ");
+    return JSON.parse(retry);
+  }
 }
 
 // ── Разрешение одного рынка ───────────────────────────────────

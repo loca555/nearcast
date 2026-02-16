@@ -12,8 +12,14 @@ import { checkBudget, trackUsage } from "./spending-tracker.js";
 // ── Парсинг JSON от AI (с очисткой типичных ошибок) ──────────
 
 function parseAIJson(text) {
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("AI вернул невалидный ответ");
+  // Убираем markdown code blocks (```json ... ```)
+  let cleaned = text.replace(/```\w*\n?/g, "").trim();
+
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.error("[ai-parse] Нет JSON в ответе AI:", text.slice(0, 500));
+    throw new Error("AI вернул невалидный ответ: " + text.slice(0, 200));
+  }
 
   let raw = jsonMatch[0];
   // Убираем trailing commas перед ] и }
@@ -23,10 +29,15 @@ function parseAIJson(text) {
 
   try {
     return JSON.parse(raw);
-  } catch (e) {
-    // Вторая попытка: вырезаем всё кроме JSON
-    const retry = raw.replace(/[\x00-\x1f]/g, " ");
-    return JSON.parse(retry);
+  } catch (e1) {
+    // Вторая попытка: убираем управляющие символы
+    try {
+      const retry = raw.replace(/[\x00-\x1f]/g, " ");
+      return JSON.parse(retry);
+    } catch (e2) {
+      console.error("[ai-parse] Не удалось распарсить JSON:", raw.slice(0, 500));
+      throw new Error("AI JSON parse error: " + e2.message + " | raw: " + raw.slice(0, 200));
+    }
   }
 }
 
@@ -200,7 +211,7 @@ Rules:
 
   checkBudget();
 
-  const response = await chatCompletion(prompt, 1500, { webSearch: true });
+  const response = await chatCompletion(prompt, 2500, { webSearch: true });
   trackUsage("validator", getUsage(response));
 
   const text = getResponseText(response);

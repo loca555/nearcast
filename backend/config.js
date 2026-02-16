@@ -34,6 +34,6 @@ export default {
   ai: {
     apiKey: process.env.VENICE_API_KEY || "",
     baseUrl: process.env.AI_BASE_URL || "https://api.venice.ai/api/v1",
-    model: process.env.AI_MODEL || "openai-gpt-oss-120b",
+    model: process.env.AI_MODEL || "claude-sonnet-45",
   },
 };
