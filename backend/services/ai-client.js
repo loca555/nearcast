@@ -22,6 +22,7 @@ export async function chatCompletion(prompt, maxTokens = 1000, options = {}) {
 
   const veniceParams = {
     include_venice_system_prompt: false,
+    disable_thinking: true,
   };
   if (options.webSearch) {
     veniceParams.enable_web_search = "on";
@@ -38,8 +39,6 @@ export async function chatCompletion(prompt, maxTokens = 1000, options = {}) {
       max_tokens: maxTokens,
       messages: [{ role: "user", content: prompt }],
       venice_parameters: veniceParams,
-      // Отключаем extended thinking — нам не нужен, экономит токены
-      thinking: { type: "disabled" },
     }),
   });
 
