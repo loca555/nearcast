@@ -729,7 +729,7 @@ function MarketDetail({ market, account, balance, onBack, onRefresh, mob }) {
           <span>Пул: <b style={{ color: "#818cf8" }}>{formatNear(market.totalPool)} NEAR</b></span>
           <span>Ставок: {market.totalBets}</span>
           <span>До: {formatDate(market.betsEndDate)}</span>
-          <span>Резолв: {formatDate(market.resolutionDate)}</span>
+          <span>Resolution: {formatDate(market.resolutionDate)}</span>
         </div>
 
         {/* Исходы с коэффициентами */}
@@ -1181,7 +1181,7 @@ function CreateMarket({ account, onCreated, mob }) {
               <b>{new Date(aiResult.betsEndDate).toLocaleString("ru-RU")}</b>
             </div>
             <div>
-              <span style={{ color: "#94a3b8" }}>Разрешение: </span>
+              <span style={{ color: "#94a3b8" }}>Resolution: </span>
               <b>{new Date(aiResult.resolutionDate).toLocaleString("ru-RU")}</b>
             </div>
           </div>
