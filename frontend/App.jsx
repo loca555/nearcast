@@ -14,6 +14,22 @@ import {
 } from "./near-wallet.js";
 import "@near-wallet-selector/modal-ui/styles.css";
 
+// ── Определение мобильного устройства ────────────────────────
+
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.innerWidth < breakpoint
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    setIsMobile(mq.matches);
+    return () => mq.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 // ── Утилиты ───────────────────────────────────────────────────
 
 const ONE_NEAR = 1e24;
@@ -216,6 +232,7 @@ const styles = {
 // ══════════════════════════════════════════════════════════════
 
 export default function App() {
+  const mob = useIsMobile();
   const [page, setPage] = useState("markets"); // markets | market | create | portfolio
   const [account, setAccount] = useState(null);
   const [markets, setMarkets] = useState([]);
@@ -326,9 +343,15 @@ export default function App() {
   return (
     <div style={styles.body}>
       {/* Шапка */}
-      <header style={styles.header}>
+      <header style={{
+        ...styles.header,
+        ...(mob ? { flexDirection: "column", gap: 12, padding: "12px 16px" } : {}),
+      }}>
         <div style={styles.logo}>◈ NearCast</div>
-        <nav style={styles.nav}>
+        <nav style={{
+          ...styles.nav,
+          ...(mob ? { flexWrap: "wrap", justifyContent: "center", gap: 8 } : {}),
+        }}>
           <button
             style={styles.navBtn(page === "markets")}
             onClick={() => setPage("markets")}
@@ -348,12 +371,12 @@ export default function App() {
             Портфель
           </button>
           {account ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ color: "#818cf8", fontWeight: 600, fontSize: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+              <span style={{ color: "#818cf8", fontWeight: 600, fontSize: 13 }}>
                 {formatNear(balance)} NEAR
               </span>
-              <button style={styles.walletBtn} onClick={signOut}>
-                {account.accountId.slice(0, 16)}...
+              <button style={{ ...styles.walletBtn, fontSize: 12, padding: "6px 12px" }} onClick={signOut}>
+                {account.accountId.slice(0, mob ? 10 : 16)}...
               </button>
             </div>
           ) : (
@@ -367,7 +390,7 @@ export default function App() {
       <div style={styles.container}>
         {/* Панель баланса */}
         {account && (
-          <BalancePanel balance={balance} onUpdate={loadBalance} />
+          <BalancePanel balance={balance} onUpdate={loadBalance} mob={mob} />
         )}
 
         {page === "markets" && (
@@ -379,6 +402,7 @@ export default function App() {
             categoryFilter={categoryFilter}
             setCategoryFilter={setCategoryFilter}
             onOpen={openMarket}
+            mob={mob}
           />
         )}
         {page === "market" && selectedMarket && (
@@ -388,12 +412,14 @@ export default function App() {
             balance={balance}
             onBack={() => { setPage("markets"); loadMarkets(); }}
             onRefresh={() => { openMarket(selectedMarket.id); loadBalance(); }}
+            mob={mob}
           />
         )}
         {page === "create" && (
           <CreateMarket
             account={account}
             onCreated={() => { setPage("markets"); loadMarkets(); }}
+            mob={mob}
           />
         )}
         {page === "portfolio" && (
@@ -404,6 +430,7 @@ export default function App() {
             balance={balance}
             onRefresh={() => { loadUserBets(); loadMarkets(); loadBalance(); }}
             onOpenMarket={openMarket}
+            mob={mob}
           />
         )}
       </div>
@@ -415,7 +442,7 @@ export default function App() {
 // ПАНЕЛЬ БАЛАНСА
 // ══════════════════════════════════════════════════════════════
 
-function BalancePanel({ balance, onUpdate }) {
+function BalancePanel({ balance, onUpdate, mob }) {
   const [amount, setAmount] = useState("");
   const [mode, setMode] = useState(null); // null | "deposit" | "withdraw"
   const [loading, setLoading] = useState(false);
@@ -450,14 +477,17 @@ function BalancePanel({ balance, onUpdate }) {
       background: "linear-gradient(135deg, #1e293b 0%, #0f1629 100%)",
       border: "1px solid #6366f133",
     }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        ...(mob ? { flexDirection: "column", gap: 12, alignItems: "stretch" } : {}),
+      }}>
+        <div style={mob ? { textAlign: "center" } : {}}>
           <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 4 }}>Баланс на платформе</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: "#818cf8" }}>
+          <div style={{ fontSize: mob ? 24 : 28, fontWeight: 700, color: "#818cf8" }}>
             {formatNear(balance)} <span style={{ fontSize: 16, fontWeight: 400, color: "#94a3b8" }}>NEAR</span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: mob ? "center" : "flex-end" }}>
           <button
             style={{ ...styles.primaryBtn, fontSize: 13, padding: "8px 16px" }}
             onClick={() => setMode(mode === "deposit" ? null : "deposit")}
@@ -474,7 +504,10 @@ function BalancePanel({ balance, onUpdate }) {
       </div>
 
       {mode && (
-        <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center" }}>
+        <div style={{
+          marginTop: 16, display: "flex", gap: 12, alignItems: "center",
+          ...(mob ? { flexDirection: "column", alignItems: "stretch" } : {}),
+        }}>
           <input
             type="number"
             value={amount}
@@ -482,25 +515,27 @@ function BalancePanel({ balance, onUpdate }) {
             placeholder={`Сумма NEAR для ${mode === "deposit" ? "пополнения" : "вывода"}`}
             min="0.01"
             step="0.1"
-            style={{ ...styles.input, width: 260, marginBottom: 0 }}
+            style={{ ...styles.input, width: mob ? "100%" : 260, marginBottom: 0 }}
           />
-          <button
-            style={{
-              ...styles.primaryBtn, fontSize: 13, padding: "10px 20px",
-              background: mode === "deposit" ? "#6366f1" : "#f59e0b",
-              opacity: loading ? 0.5 : 1,
-            }}
-            onClick={handleAction}
-            disabled={loading}
-          >
-            {loading ? "..." : mode === "deposit" ? "Пополнить" : "Вывести"}
-          </button>
-          <button
-            style={{ ...styles.secondaryBtn, fontSize: 13 }}
-            onClick={() => { setMode(null); setMessage(""); }}
-          >
-            Отмена
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              style={{
+                ...styles.primaryBtn, fontSize: 13, padding: "10px 20px", flex: 1,
+                background: mode === "deposit" ? "#6366f1" : "#f59e0b",
+                opacity: loading ? 0.5 : 1,
+              }}
+              onClick={handleAction}
+              disabled={loading}
+            >
+              {loading ? "..." : mode === "deposit" ? "Пополнить" : "Вывести"}
+            </button>
+            <button
+              style={{ ...styles.secondaryBtn, fontSize: 13 }}
+              onClick={() => { setMode(null); setMessage(""); }}
+            >
+              Отмена
+            </button>
+          </div>
         </div>
       )}
 
@@ -530,6 +565,7 @@ function MarketBrowser({
   categoryFilter,
   setCategoryFilter,
   onOpen,
+  mob,
 }) {
   return (
     <>
@@ -582,11 +618,11 @@ function MarketBrowser({
             <span style={styles.badge("#94a3b8")}>{m.category}</span>
           </div>
           <div style={styles.cardTitle}>{m.question}</div>
-          <div style={{ display: "flex", gap: 20, color: "#94a3b8", fontSize: 13 }}>
+          <div style={{ display: "flex", gap: mob ? 8 : 20, color: "#94a3b8", fontSize: mob ? 12 : 13, flexWrap: "wrap" }}>
             <span>Пул: {formatNear(m.totalPool)} NEAR</span>
             <span>Ставок: {m.totalBets}</span>
-            <span>Исходов: {m.outcomes.length}</span>
-            <span>Ставки до: {formatDate(m.betsEndDate)}</span>
+            {!mob && <span>Исходов: {m.outcomes.length}</span>}
+            <span>До: {formatDate(m.betsEndDate)}</span>
           </div>
         </div>
       ))}
@@ -598,7 +634,7 @@ function MarketBrowser({
 // ДЕТАЛИ РЫНКА
 // ══════════════════════════════════════════════════════════════
 
-function MarketDetail({ market, account, balance, onBack, onRefresh }) {
+function MarketDetail({ market, account, balance, onBack, onRefresh, mob }) {
   const [betAmount, setBetAmount] = useState("1");
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -664,11 +700,11 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
           </p>
         )}
 
-        <div style={{ display: "flex", gap: 24, color: "#94a3b8", fontSize: 13, marginBottom: 20 }}>
-          <span>Общий пул: <b style={{ color: "#818cf8" }}>{formatNear(market.totalPool)} NEAR</b></span>
+        <div style={{ display: "flex", gap: mob ? 8 : 24, color: "#94a3b8", fontSize: mob ? 12 : 13, marginBottom: 20, flexWrap: "wrap" }}>
+          <span>Пул: <b style={{ color: "#818cf8" }}>{formatNear(market.totalPool)} NEAR</b></span>
           <span>Ставок: {market.totalBets}</span>
-          <span>Ставки до: {formatDate(market.betsEndDate)}</span>
-          <span>Разрешение: {formatDate(market.resolutionDate)}</span>
+          <span>До: {formatDate(market.betsEndDate)}</span>
+          <span>Резолв: {formatDate(market.resolutionDate)}</span>
         </div>
 
         {/* Исходы с коэффициентами */}
@@ -712,7 +748,7 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
                 Доступно: <b style={{ color: "#818cf8" }}>{formatNear(balance)} NEAR</b>
               </div>
             )}
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: mob ? "wrap" : "nowrap" }}>
               <input
                 type="number"
                 value={betAmount}
@@ -720,10 +756,10 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
                 placeholder="Сумма NEAR"
                 min="0.1"
                 step="0.1"
-                style={{ ...styles.input, width: 140, marginBottom: 0 }}
+                style={{ ...styles.input, width: mob ? "100%" : 140, marginBottom: 0 }}
               />
               <button
-                style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1 }}
+                style={{ ...styles.primaryBtn, opacity: loading ? 0.5 : 1, ...(mob ? { width: "100%" } : {}) }}
                 onClick={handleBet}
                 disabled={loading}
               >
@@ -769,7 +805,7 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
 // СОЗДАНИЕ РЫНКА
 // ══════════════════════════════════════════════════════════════
 
-function CreateMarket({ account, onCreated }) {
+function CreateMarket({ account, onCreated, mob }) {
   // Шаги: league → matches → market → confirm
   const [step, setStep] = useState("league");
   const [sportsConfig, setSportsConfig] = useState(null);
@@ -904,11 +940,11 @@ function CreateMarket({ account, onCreated }) {
       <h2 style={{ fontSize: 22, marginBottom: 20 }}>Создать рынок</h2>
 
       {/* Индикатор шагов */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center" }}>
+      <div style={{ display: "flex", gap: mob ? 4 : 8, marginBottom: 24, alignItems: "center", justifyContent: mob ? "center" : "flex-start" }}>
         {stepNames.map((label, i) => (
           <React.Fragment key={i}>
-            {i > 0 && <div style={{ width: 32, height: 2, background: i < stepNum ? "#6366f1" : "#334155" }} />}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, color: i < stepNum ? "#818cf8" : "#64748b" }}>
+            {i > 0 && <div style={{ width: mob ? 16 : 32, height: 2, background: i < stepNum ? "#6366f1" : "#334155" }} />}
+            <div style={{ display: "flex", alignItems: "center", gap: 4, color: i < stepNum ? "#818cf8" : "#64748b" }}>
               <div style={{
                 width: 26, height: 26, borderRadius: "50%",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -919,7 +955,7 @@ function CreateMarket({ account, onCreated }) {
               }}>
                 {i + 1}
               </div>
-              <span style={{ fontSize: 12, fontWeight: 500 }}>{label}</span>
+              {!mob && <span style={{ fontSize: 12, fontWeight: 500 }}>{label}</span>}
             </div>
           </React.Fragment>
         ))}
@@ -1000,7 +1036,8 @@ function CreateMarket({ account, onCreated }) {
                   key={i}
                   onClick={() => setSelectedMatch(m)}
                   style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    display: "flex", justifyContent: "space-between", alignItems: mob ? "flex-start" : "center",
+                    flexDirection: mob ? "column" : "row", gap: mob ? 4 : 0,
                     padding: "12px 16px", marginBottom: 8, borderRadius: 10,
                     background: isSelected ? "#6366f122" : "#0f1629",
                     border: `1px solid ${isSelected ? "#6366f1" : "#334155"}`,
@@ -1008,13 +1045,13 @@ function CreateMarket({ account, onCreated }) {
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 15 }}>
+                    <div style={{ fontWeight: 600, fontSize: mob ? 14 : 15 }}>
                       {isSelected && <span style={{ color: "#6366f1" }}>● </span>}
                       {m.teamA} — {m.teamB}
                     </div>
                     {m.round && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{m.round}</div>}
                   </div>
-                  <div style={{ fontSize: 14, color: "#818cf8", fontWeight: 500, whiteSpace: "nowrap" }}>
+                  <div style={{ fontSize: mob ? 12 : 14, color: "#818cf8", fontWeight: 500, whiteSpace: "nowrap" }}>
                     {formatMatchDate(m.date)}
                   </div>
                 </div>
@@ -1039,11 +1076,18 @@ function CreateMarket({ account, onCreated }) {
       {step === "market" && selectedMatch && (
         <div style={{ ...styles.card, cursor: "default" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h3 style={{ fontSize: 16, margin: 0 }}>
+            <h3 style={{ fontSize: mob ? 14 : 16, margin: 0 }}>
               {selectedMatch.teamA} — {selectedMatch.teamB}
-              <span style={{ color: "#818cf8", fontSize: 14, fontWeight: 400, marginLeft: 12 }}>
-                {formatMatchDate(selectedMatch.date)}
-              </span>
+              {!mob && (
+                <span style={{ color: "#818cf8", fontSize: 14, fontWeight: 400, marginLeft: 12 }}>
+                  {formatMatchDate(selectedMatch.date)}
+                </span>
+              )}
+              {mob && (
+                <div style={{ color: "#818cf8", fontSize: 12, fontWeight: 400, marginTop: 4 }}>
+                  {formatMatchDate(selectedMatch.date)}
+                </div>
+              )}
             </h3>
             <button style={styles.secondaryBtn} onClick={() => { setStep("matches"); setMessage(""); }}>
               Назад
@@ -1150,7 +1194,7 @@ function CreateMarket({ account, onCreated }) {
 // ПОРТФЕЛЬ
 // ══════════════════════════════════════════════════════════════
 
-function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarket }) {
+function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarket, mob }) {
   if (!account) {
     return (
       <div style={{ textAlign: "center", padding: 60 }}>
@@ -1186,22 +1230,22 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
         </button>
       </h2>
 
-      <div style={styles.statsRow}>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{formatNear(balance)}</div>
+      <div style={{ ...styles.statsRow, ...(mob ? { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 } : {}) }}>
+        <div style={{ ...styles.statCard, ...(mob ? { minWidth: 0 } : {}) }}>
+          <div style={{ ...styles.statValue, fontSize: mob ? 18 : 24 }}>{formatNear(balance)}</div>
           <div style={styles.statLabel}>Баланс (NEAR)</div>
         </div>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{userBets.length}</div>
+        <div style={{ ...styles.statCard, ...(mob ? { minWidth: 0 } : {}) }}>
+          <div style={{ ...styles.statValue, fontSize: mob ? 18 : 24 }}>{userBets.length}</div>
           <div style={styles.statLabel}>Ставок</div>
         </div>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{marketIds.length}</div>
+        <div style={{ ...styles.statCard, ...(mob ? { minWidth: 0 } : {}) }}>
+          <div style={{ ...styles.statValue, fontSize: mob ? 18 : 24 }}>{marketIds.length}</div>
           <div style={styles.statLabel}>Рынков</div>
         </div>
-        <div style={styles.statCard}>
-          <div style={styles.statValue}>{formatNear(totalBet.toString())}</div>
-          <div style={styles.statLabel}>Всего поставлено (NEAR)</div>
+        <div style={{ ...styles.statCard, ...(mob ? { minWidth: 0 } : {}) }}>
+          <div style={{ ...styles.statValue, fontSize: mob ? 18 : 24 }}>{formatNear(totalBet.toString())}</div>
+          <div style={styles.statLabel}>Поставлено (NEAR)</div>
         </div>
       </div>
 
@@ -1235,11 +1279,12 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
               <div
                 key={i}
                 style={{
-                  fontSize: 13,
+                  fontSize: mob ? 12 : 13,
                   color: "#94a3b8",
                   display: "flex",
-                  gap: 12,
+                  gap: mob ? 6 : 12,
                   marginTop: 4,
+                  flexWrap: "wrap",
                 }}
               >
                 <span>
