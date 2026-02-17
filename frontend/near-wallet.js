@@ -26,13 +26,6 @@ export async function initWalletSelector(networkId = "testnet", contract = "", n
   // Function Call Access Key: методы без attached deposit
   // вызываются без попапа кошелька (автоподпись).
   // deposit() и request_resolution() — с attached NEAR — попап останется.
-  const contractConfig = contract
-    ? {
-        contractId: contract,
-        methodNames: ["place_bet", "claim_winnings", "withdraw", "create_market"],
-      }
-    : undefined;
-
   selector = await setupWalletSelector({
     network,
     modules: [
@@ -43,7 +36,12 @@ export async function initWalletSelector(networkId = "testnet", contract = "", n
             : "https://app.mynearwallet.com",
       }),
     ],
-    contract: contractConfig,
+    createAccessKeyFor: contract
+      ? {
+          contractId: contract,
+          methodNames: ["place_bet", "claim_winnings", "withdraw", "create_market"],
+        }
+      : undefined,
   });
 
   modal = setupModal(selector, {
