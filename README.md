@@ -1,6 +1,59 @@
 # NearCast — Prediction Markets on NEAR
 
-Decentralized prediction market platform on NEAR blockchain with an AI oracle for automatic market resolution.
+Децентрализованная платформа предсказаний на блокчейне NEAR с двойной системой оракулов для автоматического разрешения рынков.
+
+## How It Works
+
+NearCast позволяет создавать рынки предсказаний на спортивные события. Пользователи делают ставки, а после завершения матча рынок автоматически разрешается — и выигрыш распределяется победителям.
+
+### Двойная система оракулов
+
+```
+                    ┌─────────────────────────┐
+                    │     NearCast Contract    │
+                    │   (nearcast-oracle.testnet)   │
+                    └─────────┬───────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼                               ▼
+   ┌──────────────────┐            ┌──────────────────┐
+   │   ESPN Oracle    │            │    AI Oracle      │
+   │  (спортивные)    │            │  (остальные)      │
+   └────────┬─────────┘            └────────┬─────────┘
+            │                               │
+            ▼                               ▼
+   ┌──────────────────┐            ┌──────────────────┐
+   │  OutLayer TEE    │            │    Venice AI      │
+   │  Intel TDX       │            │  Claude Sonnet 4.5│
+   │  + ESPN API      │            │  + Web Search     │
+   └──────────────────┘            └──────────────────┘
+```
+
+**ESPN Oracle** — для спортивных рынков с привязкой к матчу (ESPN Event ID):
+- WASM Worker запускается в Intel TDX (Trusted Execution Environment) через [OutLayer](https://outlayer.fastnear.com)
+- Worker делает HTTP-запрос к ESPN API, парсит финальный счёт и определяет победителя
+- Результат криптографически подтверждён аппаратным TEE — подделать невозможно
+- **Permissionless** — кто угодно может вызвать разрешение, не нужен доверенный оператор
+- Worker: [github.com/loca555/nearcast-espn-oracle](https://github.com/loca555/nearcast-espn-oracle)
+
+**AI Oracle** — для рынков без ESPN привязки:
+- AI (Claude Sonnet 4.5 через Venice AI) проверяет результат через веб-поиск
+- Автоматически запускается каждые 5 минут на backend-сервере
+- Требует доверие к оператору сервера
+
+### Permissionless Resolution (ESPN Oracle)
+
+Любой может разрешить спортивный рынок — через UI или напрямую через NEAR CLI:
+
+```bash
+near call nearcast-oracle.testnet request_resolution '{"market_id": 0}' \
+  --accountId YOUR_ACCOUNT.testnet \
+  --deposit 0.5 \
+  --gas 300000000000000 \
+  --networkId testnet
+```
+
+Вызывающий оплачивает OutLayer (~0.001 NEAR), неиспользованный депозит возвращается автоматически. Не требуется ни доступ к UI, ни ключи оператора.
 
 ## Features
 
@@ -116,6 +169,14 @@ Set the environment variables listed above in the Render dashboard.
 | POST | `/api/generate-market` | AI-generated market for a match |
 | GET | `/api/oracle/budget` | API spending summary |
 | GET | `/api/oracle/logs` | Oracle resolution logs |
+
+## Contracts & Workers
+
+| Component | Address / Repo | Description |
+|-----------|---------------|-------------|
+| Smart Contract | `nearcast-oracle.testnet` | Rust, NEAR SDK 5.6, prediction markets + OutLayer integration |
+| ESPN Worker | [loca555/nearcast-espn-oracle](https://github.com/loca555/nearcast-espn-oracle) | WASI P2 WASM, runs in OutLayer TEE |
+| OutLayer | `outlayer.testnet` | Verifiable off-chain compute (Intel TDX) |
 
 ## License
 

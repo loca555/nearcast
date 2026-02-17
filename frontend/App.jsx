@@ -697,7 +697,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
         )}
 
         {/* Кнопка Resolve via ESPN — для закрытых спортивных рынков после resolutionDate */}
-        {market.espnEventId && (market.status === "closed" || market.status === "active") && (
+        {market.espnEventId && (market.status === "closed" || market.status === "active") && Date.now() >= Number(BigInt(market.resolutionDate || 0) / BigInt(1_000_000)) && (
           <div style={{ marginTop: 20, padding: "16px", borderRadius: 10, background: `${th.successBg}`, border: `1px solid ${th.successText}33` }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <div style={{ flex: 1 }}>
