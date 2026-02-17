@@ -82,7 +82,7 @@ export function subscribe(callback) {
 // ── Конвертация NEAR → yoctoNEAR ─────────────────────────────
 
 function nearToYocto(amountNear) {
-  return (BigInt(Math.round(amountNear * 1e6)) * BigInt("1000000000000000000")).toString();
+  return BigInt(Math.round(amountNear * 1e6)) * BigInt("1000000000000000000");
 }
 
 // ── Внутренний баланс: deposit / withdraw ─────────────────────
@@ -97,8 +97,8 @@ export async function deposit(amountNear) {
       actionCreators.functionCall(
         "deposit",
         {},
-        "30000000000000", // 30 TGas
-        yocto
+        30_000_000_000_000n, // 30 TGas
+        yocto // attached NEAR — попап кошелька
       ),
     ],
   });
@@ -113,9 +113,9 @@ export async function withdraw(amountNear) {
     actions: [
       actionCreators.functionCall(
         "withdraw",
-        { amount: yocto },
-        "100000000000000", // 100 TGas
-        "0"
+        { amount: yocto.toString() },
+        100_000_000_000_000n, // 100 TGas
+        0n // без deposit — автоподпись
       ),
     ],
   });
@@ -157,8 +157,8 @@ export async function createMarket({
       actionCreators.functionCall(
         "create_market",
         args,
-        "30000000000000", // 30 TGas
-        "0"
+        30_000_000_000_000n, // 30 TGas
+        0n // без deposit — автоподпись
       ),
     ],
   });
@@ -173,9 +173,9 @@ export async function placeBet(marketId, outcome, amountNear) {
     actions: [
       actionCreators.functionCall(
         "place_bet",
-        { market_id: marketId, outcome, amount: yocto },
-        "30000000000000", // 30 TGas
-        "0" // Без deposit — списывается из внутреннего баланса
+        { market_id: marketId, outcome, amount: yocto.toString() },
+        30_000_000_000_000n, // 30 TGas
+        0n // без deposit — автоподпись
       ),
     ],
   });
@@ -190,8 +190,8 @@ export async function requestResolution(marketId) {
       actionCreators.functionCall(
         "request_resolution",
         { market_id: marketId },
-        "300000000000000", // 300 TGas (OutLayer + callback)
-        nearToYocto("0.5") // deposit для OutLayer (сдача вернётся)
+        300_000_000_000_000n, // 300 TGas (OutLayer + callback)
+        nearToYocto(0.5) // attached 0.5 NEAR — попап кошелька
       ),
     ],
   });
@@ -206,8 +206,8 @@ export async function claimWinnings(marketId) {
       actionCreators.functionCall(
         "claim_winnings",
         { market_id: marketId },
-        "30000000000000", // 30 TGas
-        "0"
+        30_000_000_000_000n, // 30 TGas
+        0n // без deposit — автоподпись
       ),
     ],
   });
