@@ -12,7 +12,7 @@ import {
   getStats,
   getBalance,
 } from "../services/near.js";
-import { manualResolve, getResolutionLogs } from "../services/oracle.js";
+import { getResolutionLogs } from "../services/oracle.js";
 import {
   SPORTS_CONFIG,
   MARKET_TYPES,
@@ -20,7 +20,6 @@ import {
   generateMarket,
 } from "../services/market-validator.js";
 import { getSpendingSummary } from "../services/spending-tracker.js";
-import config from "../config.js";
 
 const router = Router();
 
@@ -149,23 +148,7 @@ router.post("/generate-market", async (req, res, next) => {
   }
 });
 
-// ── Оракул (admin) ────────────────────────────────────────────
-
-// Ручное разрешение рынка
-router.post("/oracle/resolve/:id", async (req, res, next) => {
-  try {
-    // Простая проверка — в продакшене нужна полноценная авторизация
-    const adminKey = req.headers["x-admin-key"];
-    if (adminKey !== config.oracle.privateKey?.slice(0, 16)) {
-      return res.status(403).json({ error: "Доступ запрещён" });
-    }
-
-    const result = await manualResolve(parseInt(req.params.id));
-    res.json(result);
-  } catch (err) {
-    next(err);
-  }
-});
+// ── Оракул (логи и бюджет) ───────────────────────────────────
 
 // Бюджет API
 router.get("/oracle/budget", (_req, res, next) => {

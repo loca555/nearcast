@@ -3,7 +3,7 @@
  *
  * Два режима:
  * - viewAccount: бесплатные чтения (без ключей)
- * - oracleAccount: подписание транзакций оракулом (resolve_market)
+ * - oracleAccount: подписание транзакций (OutLayer relayer)
  */
 
 import { connect, keyStores, KeyPair } from "near-api-js";
@@ -124,49 +124,6 @@ export async function getStats() {
 
 export async function getBalance(accountId) {
   return (await viewContract("get_balance", { account_id: accountId })) || "0";
-}
-
-// ── Call методы оракула (подписание транзакций) ────────────────
-
-export async function resolveMarket(marketId, winningOutcome, reasoning = "") {
-  const account = await initOracleAccount();
-
-  const result = await account.functionCall({
-    contractId: config.near.contractId,
-    methodName: "resolve_market",
-    args: {
-      market_id: marketId,
-      winning_outcome: winningOutcome,
-      reasoning,
-    },
-    gas: "100000000000000", // 100 TGas
-    attachedDeposit: "0",
-  });
-
-  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
-  console.log(`[near] Рынок #${marketId} разрешён. TX: ${txHash}`);
-  return txHash;
-}
-
-// ── Аннулирование рынка (void) — возврат всех ставок ─────────
-
-export async function voidMarket(marketId, reasoning = "") {
-  const account = await initOracleAccount();
-
-  const result = await account.functionCall({
-    contractId: config.near.contractId,
-    methodName: "void_market",
-    args: {
-      market_id: marketId,
-      reasoning,
-    },
-    gas: "100000000000000", // 100 TGas
-    attachedDeposit: "0",
-  });
-
-  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
-  console.log(`[near] Рынок #${marketId} аннулирован (void). TX: ${txHash}`);
-  return txHash;
 }
 
 // ── ESPN Oracle — запрос разрешения через OutLayer (on-chain) ────
