@@ -209,8 +209,21 @@ function getStatusLabel(market, t) {
 
 const isErrorMsg = (msg) => msg && (msg.includes("Ошибка") || msg.includes("Error"));
 
-const CATEGORY_MAP = { "спорт": "Sports", "sport": "Sports", "sports": "Sports" };
-const categoryLabel = (cat, lang) => lang === "en" ? (CATEGORY_MAP[cat?.toLowerCase()] || cat) : cat;
+const CATEGORY_LABELS = {
+  "спорт": { ru: "Спорт", en: "Sports" },
+  "football": { ru: "Футбол", en: "Football" },
+  "basketball": { ru: "Баскетбол", en: "Basketball" },
+  "hockey": { ru: "Хоккей", en: "Hockey" },
+  "american-football": { ru: "Амер. футбол", en: "Am. Football" },
+  "baseball": { ru: "Бейсбол", en: "Baseball" },
+  "mma": { ru: "MMA", en: "MMA" },
+  "tennis": { ru: "Теннис", en: "Tennis" },
+  "racing": { ru: "Автоспорт", en: "Motorsport" },
+};
+const categoryLabel = (cat, lang) => {
+  const labels = CATEGORY_LABELS[cat];
+  return labels ? (lang === "en" ? labels.en : labels.ru) : cat;
+};
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < breakpoint);
@@ -747,7 +760,7 @@ function CreateMarket({ account, onCreated }) {
     try {
       const betsEnd = new Date(aiResult.betsEndDate).getTime();
       const resolution = new Date(aiResult.resolutionDate).getTime();
-      await createMarket({ question: aiResult.question, description: aiResult.description || "", outcomes: aiResult.outcomes, category: "спорт", betsEndDate: msToNano(betsEnd), resolutionDate: msToNano(resolution) });
+      await createMarket({ question: aiResult.question, description: aiResult.description || "", outcomes: aiResult.outcomes, category: sport, betsEndDate: msToNano(betsEnd), resolutionDate: msToNano(resolution) });
       setMessage(t.create.marketCreated);
       setTimeout(onCreated, 1500);
     } catch (err) { setMessage(`${t.error}: ${err.message}`); }
