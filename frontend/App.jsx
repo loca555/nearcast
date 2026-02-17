@@ -24,6 +24,7 @@ const TRANSLATIONS = {
     status: { active: "Активный", closed: "In-play", resolved: "Resolved", cancelled: "Отменён", resolvedWon: (w) => `Resolved: ${w} won` },
     stats: { markets: "Рынков", volume: "Объём (NEAR)" },
     filters: { all: "Все", active: "Активный", inPlay: "In-play", resolved: "Resolved", cancelled: "Отменённые" },
+    sort: { label: "Сортировка", endDate: "Дата окончания", volume: "Объём", newest: "Новые" },
     market: {
       pool: "Пул", bets: "Ставок", outcomes: "Исходов", until: "До", resolution: "Resolution",
       noMarkets: "Рынков пока нет. Создайте первый!", backToMarkets: "← Назад к рынкам",
@@ -63,6 +64,7 @@ const TRANSLATIONS = {
     status: { active: "Active", closed: "In-play", resolved: "Resolved", cancelled: "Cancelled", resolvedWon: (w) => `Resolved: ${w} won` },
     stats: { markets: "Markets", volume: "Volume (NEAR)" },
     filters: { all: "All", active: "Active", inPlay: "In-play", resolved: "Resolved", cancelled: "Cancelled" },
+    sort: { label: "Sort", endDate: "End Date", volume: "Volume", newest: "Newest" },
     market: {
       pool: "Pool", bets: "Bets", outcomes: "Outcomes", until: "Until", resolution: "Resolution",
       noMarkets: "No markets yet. Create the first one!", backToMarkets: "← Back to markets",
@@ -206,6 +208,9 @@ function getStatusLabel(market, t) {
 }
 
 const isErrorMsg = (msg) => msg && (msg.includes("Ошибка") || msg.includes("Error"));
+
+const CATEGORY_MAP = { "спорт": "Sports", "sport": "Sports", "sports": "Sports" };
+const categoryLabel = (cat, lang) => lang === "en" ? (CATEGORY_MAP[cat?.toLowerCase()] || cat) : cat;
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(typeof window !== "undefined" && window.innerWidth < breakpoint);
@@ -481,6 +486,27 @@ function BalancePanel({ balance, onUpdate }) {
 
 function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }) {
   const { t, th, S, lang, mob } = useApp();
+  const [sortBy, setSortBy] = useState("newest");
+  const [sportFilter, setSportFilter] = useState("all");
+
+  // Извлекаем уникальные категории для фильтра
+  const categories = [...new Set(markets.map((m) => m.category).filter(Boolean))];
+
+  // Сортировка
+  const sorted = [...markets].sort((a, b) => {
+    if (sortBy === "endDate") {
+      return Number(BigInt(a.betsEndDate || "0") - BigInt(b.betsEndDate || "0"));
+    }
+    if (sortBy === "volume") {
+      return Number(BigInt(b.totalPool || "0") - BigInt(a.totalPool || "0"));
+    }
+    // newest — по id по убыванию
+    return b.id - a.id;
+  });
+
+  // Фильтрация по категории
+  const filtered = sportFilter === "all" ? sorted : sorted.filter((m) => m.category === sportFilter);
+
   return (
     <>
       {stats && (
@@ -496,22 +522,41 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
         </div>
       )}
 
+      {/* Статус-фильтры */}
       <div style={S.filters}>
         {[["all", t.filters.all], ["active", t.filters.active], ["closed", t.filters.inPlay]].map(([s, label]) => (
           <button key={s} style={S.filterBtn(statusFilter === s)} onClick={() => setStatusFilter(s)}>{label}</button>
         ))}
       </div>
 
-      {markets.length === 0 && (
+      {/* Сортировка + фильтр по категории */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 13, color: th.muted }}>{t.sort.label}:</span>
+          {[["newest", t.sort.newest], ["endDate", t.sort.endDate], ["volume", t.sort.volume]].map(([key, label]) => (
+            <button key={key} style={S.filterBtn(sortBy === key)} onClick={() => setSortBy(key)}>{label}</button>
+          ))}
+        </div>
+        {categories.length > 1 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button style={S.filterBtn(sportFilter === "all")} onClick={() => setSportFilter("all")}>{t.filters.all}</button>
+            {categories.map((cat) => (
+              <button key={cat} style={S.filterBtn(sportFilter === cat)} onClick={() => setSportFilter(cat)}>{categoryLabel(cat, lang)}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {filtered.length === 0 && (
         <div style={{ textAlign: "center", color: th.dimmed, padding: 40 }}>{t.market.noMarkets}</div>
       )}
-      {markets.map((m) => (
+      {filtered.map((m) => (
         <div key={m.id} style={S.card} onClick={() => onOpen(m.id)}
           onMouseEnter={(e) => (e.currentTarget.style.borderColor = th.accentBg)}
           onMouseLeave={(e) => (e.currentTarget.style.borderColor = th.cardBorder)}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
             <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
-            <span style={S.badge("#94a3b8")}>{m.category}</span>
+            <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
           </div>
           <div style={S.cardTitle}>{m.question}</div>
           <div style={{ display: "flex", gap: mob ? 8 : 20, color: th.muted, fontSize: mob ? 12 : 13, flexWrap: "wrap" }}>
@@ -566,7 +611,7 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
       <div style={{ ...S.card, cursor: "default" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <span style={S.badge(STATUS_COLORS[market.status])}>{getStatusLabel(market, t)}</span>
-          <span style={S.badge("#94a3b8")}>{market.category}</span>
+          <span style={S.badge("#94a3b8")}>{categoryLabel(market.category, lang)}</span>
         </div>
         <h2 style={{ margin: "0 0 8px", fontSize: 22 }}>{market.question}</h2>
         {market.description && <p style={{ color: th.muted, margin: "0 0 16px", fontSize: 14 }}>{market.description}</p>}
@@ -927,7 +972,7 @@ function ResolvedMarkets({ onOpen }) {
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = th.cardBorder)}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
                 <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
-                <span style={S.badge("#94a3b8")}>{m.category}</span>
+                <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
               </div>
               <div style={S.cardTitle}>{m.question}</div>
               {winner && (

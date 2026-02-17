@@ -386,6 +386,61 @@ Rules:
   return parseAIJson(text);
 }
 
+// ── Типичные линии Over/Under и Handicap по видам спорта ─────
+
+const SPORT_LINES = {
+  football: {
+    ou: { line: "2.5", unit: { en: "goals", ru: "голов" }, examples: ["1.5", "2.5", "3.5"] },
+    hc: { line: "1.5", unit: { en: "goals", ru: "голов" }, examples: ["-1", "-1.5", "-2"] },
+  },
+  basketball: {
+    ou: { line: "215.5", unit: { en: "points", ru: "очков" }, examples: ["200.5", "210.5", "220.5", "230.5"] },
+    hc: { line: "5.5", unit: { en: "points", ru: "очков" }, examples: ["-3.5", "-5.5", "-7.5", "-10.5"] },
+  },
+  hockey: {
+    ou: { line: "5.5", unit: { en: "goals", ru: "шайб" }, examples: ["4.5", "5.5", "6.5"] },
+    hc: { line: "1.5", unit: { en: "goals", ru: "шайб" }, examples: ["-1.5", "+1.5"] },
+  },
+  "american-football": {
+    ou: { line: "45.5", unit: { en: "points", ru: "очков" }, examples: ["40.5", "43.5", "47.5", "50.5"] },
+    hc: { line: "3.5", unit: { en: "points", ru: "очков" }, examples: ["-3", "-3.5", "-6.5", "-7"] },
+  },
+  baseball: {
+    ou: { line: "8.5", unit: { en: "runs", ru: "ранов" }, examples: ["7.5", "8.5", "9.5"] },
+    hc: { line: "1.5", unit: { en: "runs", ru: "ранов" }, examples: ["-1.5", "+1.5"] },
+  },
+  mma: {
+    ou: { line: "2.5", unit: { en: "rounds", ru: "раундов" }, examples: ["1.5", "2.5"] },
+    hc: null,
+  },
+  tennis: {
+    ou: { line: "22.5", unit: { en: "games", ru: "геймов" }, examples: ["20.5", "22.5", "24.5"] },
+    hc: { line: "3.5", unit: { en: "games", ru: "геймов" }, examples: ["-2.5", "-3.5", "-4.5"] },
+  },
+  racing: { ou: null, hc: null },
+};
+
+function getSportLinesHint(sport, lang) {
+  const sl = SPORT_LINES[sport];
+  if (!sl) return "";
+  const parts = [];
+  if (sl.ou) {
+    const u = lang === "en" ? sl.ou.unit.en : sl.ou.unit.ru;
+    const ex = sl.ou.examples.join(", ");
+    parts.push(lang === "en"
+      ? `Over/Under: typical line ${sl.ou.line} ${u} (common lines: ${ex})`
+      : `Тотал: типичная линия ${sl.ou.line} ${u} (обычные линии: ${ex})`);
+  }
+  if (sl.hc) {
+    const u = lang === "en" ? sl.hc.unit.en : sl.hc.unit.ru;
+    const ex = sl.hc.examples.join(", ");
+    parts.push(lang === "en"
+      ? `Handicap: typical line ${sl.hc.line} ${u} (common lines: ${ex})`
+      : `Гандикап: типичная линия ${sl.hc.line} ${u} (обычные линии: ${ex})`);
+  }
+  return parts.length > 0 ? "\n\nSport-specific lines:\n" + parts.join("\n") : "";
+}
+
 // ── AI: сгенерировать рынок для выбранного матча ─────────────
 
 export async function generateMarket({
@@ -401,6 +456,18 @@ export async function generateMarket({
   const info = getLeagueInfo(sport, country, league);
   const mtObj = MARKET_TYPES[marketType];
   const marketTypeLabel = mtObj ? (lang === "en" ? mtObj.en : mtObj.ru) : marketType;
+  const linesHint = getSportLinesHint(sport, lang);
+  const sl = SPORT_LINES[sport] || {};
+
+  // Примеры для over-under с учётом спорта
+  const ouExample = sl.ou
+    ? (lang === "en"
+      ? `["Over ${sl.ou.line} ${sl.ou.unit.en}", "Under ${sl.ou.line} ${sl.ou.unit.en}"]`
+      : `["Больше ${sl.ou.line} ${sl.ou.unit.ru}", "Меньше ${sl.ou.line} ${sl.ou.unit.ru}"]`)
+    : (lang === "en" ? `["Over 2.5", "Under 2.5"]` : `["Больше 2.5", "Меньше 2.5"]`);
+  const hcExample = sl.hc
+    ? `["${teamA} -${sl.hc.line}", "${teamB} +${sl.hc.line}"]`
+    : `["${teamA} -1.5", "${teamB} +1.5"]`;
 
   const prompt = lang === "en"
     ? `Generate a prediction market for a match.
@@ -409,7 +476,7 @@ Match: ${teamA} vs ${teamB}
 Date: ${matchDate}
 Sport: ${info.sportSearch}, ${info.leagueSearch} (${info.countryLabel})
 Market type: ${marketTypeLabel}
-
+${linesHint}
 Generate:
 1. question — market question (in English, include teams and date)
 2. description — short description (match context)
@@ -428,10 +495,10 @@ RESPOND STRICTLY IN JSON:
 
 Outcome rules by type:
 - winner: ["${teamA}", "Draw", "${teamB}"] (remove "Draw" if impossible, e.g. tennis/MMA)
-- over-under: ["Over 2.5", "Under 2.5"] (choose appropriate line)
+- over-under: ${ouExample} (pick the best line for this sport and matchup)
 - both-score: ["Yes, Both Score", "No"]
 - correct-score: ["1:0", "2:1", "2:0", "0:0", "0:1", "1:2", "0:2", "Other"] (up to 8)
-- handicap: ["${teamA} -1.5", "${teamB} +1.5"] (choose appropriate handicap)
+- handicap: ${hcExample} (pick the best line for this matchup)
 - first-half: ["${teamA}", "Draw", "${teamB}"]`
     : `Сгенерируй предсказательный рынок для матча.
 
@@ -439,7 +506,7 @@ Outcome rules by type:
 Дата: ${matchDate}
 Спорт: ${info.sportLabel}, ${info.leagueLabel} (${info.countryLabel})
 Тип рынка: ${marketTypeLabel}
-
+${linesHint}
 Сформируй:
 1. question — вопрос для рынка (на русском, включи команды и дату)
 2. description — краткое описание (контекст матча)
@@ -458,10 +525,10 @@ Outcome rules by type:
 
 Правила исходов по типу:
 - winner: ["${teamA}", "Ничья", "${teamB}"] (убери "Ничья" если ничья невозможна, напр. теннис/MMA)
-- over-under: ["Больше 2.5", "Меньше 2.5"] (выбери подходящую линию)
+- over-under: ${ouExample} (выбери лучшую линию для данного спорта и матча)
 - both-score: ["Да, обе забьют", "Нет"]
 - correct-score: ["1:0", "2:1", "2:0", "0:0", "0:1", "1:2", "0:2", "Другой счёт"] (до 8 вариантов)
-- handicap: ["${teamA} -1.5", "${teamB} +1.5"] (выбери подходящий гандикап)
+- handicap: ${hcExample} (выбери лучшую линию для данного матча)
 - first-half: ["${teamA}", "Ничья", "${teamB}"]`;
 
   checkBudget();
