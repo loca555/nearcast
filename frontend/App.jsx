@@ -56,6 +56,7 @@ const TRANSLATIONS = {
       noBets: "У вас пока нет ставок", outcome: "Исход",
       claimed: "✓ Получено", pending: "Ожидание",
       connectWallet: "Подключите кошелёк", connectNearWallet: "Подключить NEAR кошелёк",
+      claimAll: "Забрать все выигрыши", claimingAll: "Забираю...", allClaimed: "Все выигрыши получены!",
     },
     loading: "Загрузка...", error: "Ошибка",
   },
@@ -96,6 +97,7 @@ const TRANSLATIONS = {
       noBets: "You have no bets yet", outcome: "Outcome",
       claimed: "✓ Claimed", pending: "Pending",
       connectWallet: "Connect your wallet", connectNearWallet: "Connect NEAR Wallet",
+      claimAll: "Claim All Winnings", claimingAll: "Claiming...", allClaimed: "All winnings claimed!",
     },
     loading: "Loading...", error: "Error",
   },
@@ -408,9 +410,9 @@ export default function App() {
           )}
           {page === "market" && selectedMarket && (
             <MarketDetail
-              market={selectedMarket} account={account} balance={balance}
+              market={selectedMarket} account={account} balance={balance} userBets={userBets}
               onBack={() => { setPage("markets"); loadMarkets(); }}
-              onRefresh={() => { openMarket(selectedMarket.id); loadBalance(); }}
+              onRefresh={() => { openMarket(selectedMarket.id); loadBalance(); loadUserBets(); }}
             />
           )}
           {page === "resolved" && <ResolvedMarkets onOpen={openMarket} />}
@@ -589,7 +591,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
 // ДЕТАЛИ РЫНКА
 // ══════════════════════════════════════════════════════════════
 
-function MarketDetail({ market, account, balance, onBack, onRefresh }) {
+function MarketDetail({ market, account, balance, userBets, onBack, onRefresh }) {
   const { t, th, S, lang, mob } = useApp();
   const [betAmount, setBetAmount] = useState("1");
   const [selectedOutcome, setSelectedOutcome] = useState(null);
@@ -597,6 +599,12 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
   const [message, setMessage] = useState("");
 
   const totalPool = BigInt(market.totalPool || "0");
+
+  // Проверяем, есть ли у пользователя невостребованные выигрышные ставки или ставки для возврата
+  const myBets = (userBets || []).filter((b) => b.marketId === market.id);
+  const hasUnclaimedWin = market.status === "resolved" && myBets.some((b) => b.outcome === market.resolvedOutcome && !b.claimed);
+  const hasUnclaimedRefund = market.status === "cancelled" && myBets.some((b) => !b.claimed);
+  const canClaim = hasUnclaimedWin || hasUnclaimedRefund;
 
   const handleBet = async () => {
     if (!account) return showModal();
@@ -675,11 +683,11 @@ function MarketDetail({ market, account, balance, onBack, onRefresh }) {
           </div>
         )}
 
-        {(market.status === "resolved" || market.status === "cancelled") && account && (
+        {canClaim && account && (
           <div style={{ marginTop: 20 }}>
             <button style={{ ...S.primaryBtn, background: "#22c55e", opacity: loading ? 0.5 : 1 }}
               onClick={handleClaim} disabled={loading}>
-              {market.status === "resolved" ? t.market.claimWinnings : t.market.claimRefund}
+              {hasUnclaimedWin ? t.market.claimWinnings : t.market.claimRefund}
             </button>
           </div>
         )}
@@ -1013,6 +1021,8 @@ function ResolvedMarkets({ onOpen }) {
 
 function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarket }) {
   const { t, th, S, mob } = useApp();
+  const [claimingAll, setClaimingAll] = useState(false);
+  const [claimMsg, setClaimMsg] = useState("");
 
   if (!account) {
     return (
@@ -1030,6 +1040,32 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
   }
   const marketIds = Object.keys(betsByMarket).map(Number);
   const totalBet = userBets.reduce((sum, b) => sum + BigInt(b.amount), 0n);
+
+  // Рынки с невостребованными выигрышами
+  const claimableMarketIds = marketIds.filter((mid) => {
+    const market = markets.find((m) => m.id === mid);
+    const bets = betsByMarket[mid];
+    if (!market) return false;
+    if (market.status === "resolved") return bets.some((b) => b.outcome === market.resolvedOutcome && !b.claimed);
+    if (market.status === "cancelled") return bets.some((b) => !b.claimed);
+    return false;
+  });
+
+  const handleClaimAll = async () => {
+    setClaimingAll(true); setClaimMsg("");
+    let ok = 0, fail = 0;
+    for (const mid of claimableMarketIds) {
+      const market = markets.find((m) => m.id === mid);
+      try {
+        if (market?.status === "resolved") await claimWinnings(mid);
+        else if (market?.status === "cancelled") await claimRefund(mid);
+        ok++;
+      } catch { fail++; }
+    }
+    setClaimingAll(false);
+    setClaimMsg(fail === 0 ? t.portfolio.allClaimed : `${ok} OK, ${fail} ${t.error}`);
+    onRefresh();
+  };
 
   return (
     <>
@@ -1057,6 +1093,18 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
         </div>
       </div>
 
+      {claimableMarketIds.length > 0 && (
+        <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <button style={{ ...S.primaryBtn, background: "#22c55e", opacity: claimingAll ? 0.5 : 1 }}
+            onClick={handleClaimAll} disabled={claimingAll}>
+            {claimingAll ? t.portfolio.claimingAll : `${t.portfolio.claimAll} (${claimableMarketIds.length})`}
+          </button>
+          {claimMsg && (
+            <span style={{ fontSize: 14, color: claimMsg.includes(t.error) ? th.errorText : th.successText }}>{claimMsg}</span>
+          )}
+        </div>
+      )}
+
       {marketIds.length === 0 && (
         <div style={{ textAlign: "center", color: th.dimmed, padding: 40 }}>{t.portfolio.noBets}</div>
       )}
@@ -1066,13 +1114,15 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
         const market = markets.find((m) => m.id === mid);
         const marketQuestion = market?.question || `Market #${mid}`;
         const marketStatus = market?.status || "?";
+        const isClaimable = claimableMarketIds.includes(mid);
 
         return (
-          <div key={mid} style={S.card} onClick={() => onOpenMarket(mid)}
+          <div key={mid} style={{ ...S.card, ...(isClaimable ? { borderColor: "#22c55e44" } : {}) }} onClick={() => onOpenMarket(mid)}
             onMouseEnter={(e) => (e.currentTarget.style.borderColor = th.accentBg)}
-            onMouseLeave={(e) => (e.currentTarget.style.borderColor = th.cardBorder)}>
+            onMouseLeave={(e) => (e.currentTarget.style.borderColor = isClaimable ? "#22c55e44" : th.cardBorder)}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={S.badge(STATUS_COLORS[marketStatus] || "#94a3b8")}>{getStatusLabel(market || { status: marketStatus }, t)}</span>
+              {isClaimable && <span style={S.badge("#22c55e")}>{t.market.claimWinnings}</span>}
             </div>
             <div style={S.cardTitle}>{marketQuestion}</div>
             {bets.map((bet, i) => (
