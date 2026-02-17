@@ -168,6 +168,22 @@ export async function placeBet(marketId, outcome, amountNear) {
   });
 }
 
+// Permissionless: запрос разрешения ESPN-рынка через OutLayer TEE
+export async function requestResolution(marketId) {
+  const wallet = await selector.wallet();
+  return wallet.signAndSendTransaction({
+    receiverId: contractId,
+    actions: [
+      actionCreators.functionCall(
+        "request_resolution",
+        { market_id: marketId },
+        "300000000000000", // 300 TGas (OutLayer + callback)
+        nearToYocto("0.5") // deposit для OutLayer (сдача вернётся)
+      ),
+    ],
+  });
+}
+
 // Забрать выигрыш (зачисляется на внутренний баланс)
 export async function claimWinnings(marketId) {
   const wallet = await selector.wallet();

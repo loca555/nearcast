@@ -8,6 +8,7 @@ import {
   createMarket,
   placeBet,
   claimWinnings,
+  requestResolution,
   deposit as walletDeposit,
   withdraw as walletWithdraw,
 } from "./near-wallet.js";
@@ -716,11 +717,9 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
                 onClick={async () => {
                   setResolving(true); setMessage("");
                   try {
-                    const res = await fetch(`/api/trigger-espn-resolution/${market.id}`, { method: "POST" });
-                    const data = await res.json();
-                    if (data.error) setMessage(`${t.error}: ${data.error}`);
-                    else setMessage(data.message || (lang === "ru" ? "Запрос отправлен" : "Resolution triggered"));
-                    setTimeout(onRefresh, 3000);
+                    await requestResolution(market.id);
+                    setMessage(lang === "ru" ? "Запрос на разрешение отправлен через OutLayer TEE" : "Resolution request sent via OutLayer TEE");
+                    setTimeout(onRefresh, 5000);
                   } catch (err) { setMessage(`${t.error}: ${err.message}`); }
                   setResolving(false);
                 }}
