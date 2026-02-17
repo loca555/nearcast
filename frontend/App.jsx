@@ -300,7 +300,7 @@ export default function App() {
   const loadMarkets = useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      params.set("limit", "500");
+      params.set("limit", "100000");
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (categoryFilter !== "all") params.set("category", categoryFilter);
       const res = await fetch(`/api/markets?${params}`);
@@ -948,7 +948,7 @@ function ResolvedMarkets({ onOpen }) {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch("/api/markets?limit=500");
+        const res = await fetch("/api/markets?limit=100000");
         const data = await res.json();
         const all = Array.isArray(data) ? data : [];
         setMarkets(all.filter((m) => m.status === "resolved" || m.status === "closed" || m.status === "cancelled"));
