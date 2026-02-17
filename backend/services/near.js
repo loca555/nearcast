@@ -168,3 +168,21 @@ export async function voidMarket(marketId, reasoning = "") {
   console.log(`[near] Рынок #${marketId} аннулирован (void). TX: ${txHash}`);
   return txHash;
 }
+
+// ── ESPN Oracle — запрос разрешения через OutLayer (on-chain) ────
+
+export async function requestResolution(marketId) {
+  const account = await initOracleAccount();
+
+  const result = await account.functionCall({
+    contractId: config.near.contractId,
+    methodName: "request_resolution",
+    args: { market_id: marketId },
+    gas: "300000000000000", // 300 TGas (OutLayer + callback)
+    attachedDeposit: "100000000000000000000000", // 0.1 NEAR для OutLayer
+  });
+
+  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
+  console.log(`[near] OutLayer resolution для #${marketId}. TX: ${txHash}`);
+  return txHash;
+}

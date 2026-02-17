@@ -140,7 +140,8 @@ router.post("/generate-market", async (req, res, next) => {
     }
 
     const result = await generateMarket({
-      sport, country, league, teamA, teamB, matchDate, marketType, lang: lang || "ru",
+      sport, country, league, teamA, teamB, matchDate, marketType,
+      espnEventId: req.body.espnEventId, lang: lang || "ru",
     });
     res.json(result);
   } catch (err) {
@@ -181,6 +182,19 @@ router.get("/oracle/logs", async (req, res, next) => {
   try {
     const logs = getResolutionLogs(parseInt(req.query.limit) || 50);
     res.json(logs);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── ESPN Oracle — permissionless trigger ─────────────────────────
+
+// Триггер разрешения рынка через OutLayer (кто угодно может вызвать)
+router.post("/trigger-espn-resolution/:id", async (req, res, next) => {
+  try {
+    const { triggerResolution } = await import("../services/outlayer-relayer.js");
+    const result = await triggerResolution(parseInt(req.params.id));
+    res.json(result);
   } catch (err) {
     next(err);
   }

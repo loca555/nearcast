@@ -110,7 +110,7 @@ export async function withdraw(amountNear) {
 
 // ── Вызовы контракта (автоподпись, без попапа) ────────────────
 
-// Создать рынок
+// Создать рынок (Rust-контракт — snake_case поля)
 export async function createMarket({
   question,
   description,
@@ -118,21 +118,32 @@ export async function createMarket({
   category,
   betsEndDate,
   resolutionDate,
+  espnEventId,
+  sport,
+  league,
+  marketType,
 }) {
   const wallet = await selector.wallet();
+  const args = {
+    question,
+    description,
+    outcomes,
+    category,
+    bets_end_date: betsEndDate.toString(),
+    resolution_date: resolutionDate.toString(),
+  };
+  // ESPN метаданные (опциональные)
+  if (espnEventId) args.espn_event_id = espnEventId;
+  if (sport) args.sport = sport;
+  if (league) args.league = league;
+  if (marketType) args.market_type = marketType;
+
   return wallet.signAndSendTransaction({
     receiverId: contractId,
     actions: [
       actionCreators.functionCall(
         "create_market",
-        {
-          question,
-          description,
-          outcomes,
-          category,
-          betsEndDate: betsEndDate.toString(),
-          resolutionDate: resolutionDate.toString(),
-        },
+        args,
         "30000000000000", // 30 TGas
         "0"
       ),

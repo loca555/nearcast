@@ -570,8 +570,11 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
           onMouseEnter={(e) => (e.currentTarget.style.borderColor = th.accentBg)}
           onMouseLeave={(e) => (e.currentTarget.style.borderColor = th.cardBorder)}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
-            <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
-            <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
+              <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
+              {m.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
+            </div>
           </div>
           <div style={S.cardTitle}>{m.question}</div>
           <div style={{ display: "flex", gap: mob ? 8 : 20, color: th.muted, fontSize: mob ? 12 : 13, flexWrap: "wrap" }}>
@@ -596,6 +599,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
   const [selectedOutcome, setSelectedOutcome] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [resolving, setResolving] = useState(false);
 
   const totalPool = BigInt(market.totalPool || "0");
 
@@ -633,6 +637,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <span style={S.badge(STATUS_COLORS[market.status])}>{getStatusLabel(market, t)}</span>
           <span style={S.badge("#94a3b8")}>{categoryLabel(market.category, lang)}</span>
+          {market.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
         </div>
         <h2 style={{ margin: "0 0 8px", fontSize: 22 }}>{market.question}</h2>
         {market.description && <p style={{ color: th.muted, margin: "0 0 16px", fontSize: 14 }}>{market.description}</p>}
@@ -688,6 +693,43 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
               onClick={handleClaim} disabled={loading}>
               {hasUnclaimedWin ? t.market.claimWinnings : t.market.claimRefund}
             </button>
+          </div>
+        )}
+
+        {/* Кнопка Resolve via ESPN — для закрытых спортивных рынков после resolutionDate */}
+        {market.espnEventId && (market.status === "closed" || market.status === "active") && (
+          <div style={{ marginTop: 20, padding: "16px", borderRadius: 10, background: `${th.successBg}`, border: `1px solid ${th.successText}33` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: th.successText, marginBottom: 4 }}>
+                  ESPN Oracle — Permissionless Resolution
+                </div>
+                <div style={{ fontSize: 12, color: th.muted }}>
+                  {lang === "ru"
+                    ? "Кто угодно может запустить разрешение рынка через ESPN API"
+                    : "Anyone can trigger market resolution via ESPN API"}
+                </div>
+              </div>
+              <button
+                style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1 }}
+                disabled={resolving}
+                onClick={async () => {
+                  setResolving(true); setMessage("");
+                  try {
+                    const res = await fetch(`/api/trigger-espn-resolution/${market.id}`, { method: "POST" });
+                    const data = await res.json();
+                    if (data.error) setMessage(`${t.error}: ${data.error}`);
+                    else setMessage(data.message || (lang === "ru" ? "Запрос отправлен" : "Resolution triggered"));
+                    setTimeout(onRefresh, 3000);
+                  } catch (err) { setMessage(`${t.error}: ${err.message}`); }
+                  setResolving(false);
+                }}
+              >
+                {resolving
+                  ? "..."
+                  : lang === "ru" ? "Resolve via ESPN" : "Resolve via ESPN"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -753,7 +795,7 @@ function CreateMarket({ account, onCreated }) {
     setLoading(true); setMessage("");
     try {
       const res = await fetch("/api/generate-market", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sport, country, league, teamA: selectedMatch.teamA, teamB: selectedMatch.teamB, matchDate: selectedMatch.date, marketType, lang }) });
+        body: JSON.stringify({ sport, country, league, teamA: selectedMatch.teamA, teamB: selectedMatch.teamB, matchDate: selectedMatch.date, marketType, espnEventId: selectedMatch.id, lang }) });
       const data = await res.json();
       if (data.error) { setMessage(data.error); setLoading(false); return; }
       setAiResult(data); setStep("confirm");
@@ -768,7 +810,11 @@ function CreateMarket({ account, onCreated }) {
     try {
       const betsEnd = new Date(aiResult.betsEndDate).getTime();
       const resolution = new Date(aiResult.resolutionDate).getTime();
-      await createMarket({ question: aiResult.question, description: aiResult.description || "", outcomes: aiResult.outcomes, category: sport, betsEndDate: msToNano(betsEnd), resolutionDate: msToNano(resolution) });
+      await createMarket({
+        question: aiResult.question, description: aiResult.description || "", outcomes: aiResult.outcomes, category: sport,
+        betsEndDate: msToNano(betsEnd), resolutionDate: msToNano(resolution),
+        espnEventId: aiResult.espnEventId || "", sport: aiResult.sport || "", league: aiResult.league || "", marketType: aiResult.marketType || marketType,
+      });
       setMessage(t.create.marketCreated);
       setTimeout(onCreated, 1500);
     } catch (err) { setMessage(`${t.error}: ${err.message}`); }
@@ -992,8 +1038,11 @@ function ResolvedMarkets({ onOpen }) {
               onMouseEnter={(e) => (e.currentTarget.style.borderColor = th.accentBg)}
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = th.cardBorder)}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
-                <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
-                <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
+                  <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
+                  {m.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
+                </div>
               </div>
               <div style={S.cardTitle}>{m.question}</div>
               {winner && (

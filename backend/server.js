@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import config from "./config.js";
 import apiRoutes from "./routes/api.js";
 import { startOracle, stopOracle } from "./services/oracle.js";
+import { startRelayer, stopRelayer } from "./services/outlayer-relayer.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -89,11 +90,18 @@ app.listen(config.port, () => {
   ╚══════════════════════════════════════════╝
   `);
 
-  // Запускаем AI-оракул
+  // Запускаем AI-оракул (для не-ESPN рынков)
   if (config.ai.apiKey && config.near.contractId) {
     startOracle();
   } else {
-    console.log("[oracle] Оракул не запущен — проверьте VENICE_API_KEY и NEARCAST_CONTRACT");
+    console.log("[oracle] AI-оракул не запущен — проверьте VENICE_API_KEY и NEARCAST_CONTRACT");
+  }
+
+  // Запускаем OutLayer ESPN Relayer (для спортивных рынков)
+  if (config.near.contractId && config.oracle.privateKey) {
+    startRelayer();
+  } else {
+    console.log("[outlayer] Relayer не запущен — проверьте NEARCAST_CONTRACT и ORACLE_PRIVATE_KEY");
   }
 
   // Keep-alive: Render free tier убивает процесс при засыпании,
@@ -105,10 +113,12 @@ app.listen(config.port, () => {
 process.on("SIGINT", () => {
   console.log("\nЗавершение работы...");
   stopOracle();
+  stopRelayer();
   process.exit(0);
 });
 
 process.on("SIGTERM", () => {
   stopOracle();
+  stopRelayer();
   process.exit(0);
 });

@@ -15,4 +15,8 @@ CLAUDE.md
 .vite/
 *.wasm
 
+# Rust build artifacts
+contract-rs/target/
+worker/target/
+
 на-будущее.txt

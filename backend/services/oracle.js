@@ -194,6 +194,11 @@ async function checkMarkets() {
     const now = BigInt(Date.now()) * BigInt(1_000_000); // в наносекунды
 
     for (const market of markets) {
+      // Пропускаем спортивные рынки с ESPN ID — они разрешаются через OutLayer
+      if (market.espnEventId) {
+        continue;
+      }
+
       // Проверяем что resolutionDate наступило
       if (now >= BigInt(market.resolutionDate)) {
         await resolveOneMarket(market);

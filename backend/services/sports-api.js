@@ -73,6 +73,7 @@ function parseEvent(event) {
     "";
 
   return {
+    id: event.id, // ESPN Event ID для OutLayer permissionless resolution
     teamA,
     teamB,
     date: event.date,

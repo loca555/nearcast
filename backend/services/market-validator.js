@@ -451,6 +451,7 @@ export async function generateMarket({
   teamB,
   matchDate,
   marketType,
+  espnEventId,
   lang = "ru",
 }) {
   const info = getLeagueInfo(sport, country, league);
@@ -537,5 +538,14 @@ ${linesHint}
   trackUsage("validator", getUsage(response));
 
   const text = getResponseText(response);
-  return parseAIJson(text);
+  const result = parseAIJson(text);
+
+  // Добавляем ESPN метаданные для OutLayer permissionless resolution
+  const infoForEspn = getLeagueInfo(sport, country, league);
+  result.espnEventId = espnEventId || "";
+  result.sport = infoForEspn.espnPath ? infoForEspn.espnPath.split("/")[0] : "";
+  result.league = infoForEspn.espnPath ? infoForEspn.espnPath.split("/")[1] : "";
+  result.marketType = marketType;
+
+  return result;
 }

@@ -34,6 +34,11 @@ class Market {
   resolvedOutcome: number; // -1 = не разрешён, -2 = void (матч отменён)
   status: string; // "active" | "closed" | "resolved" | "voided"
   totalBets: number;
+  // ESPN метаданные для permissionless OutLayer resolution
+  espnEventId: string; // ESPN event ID (напр. "401547417")
+  sport: string; // ESPN sport path (напр. "soccer")
+  league: string; // ESPN league path (напр. "eng.1")
+  marketType: string; // "winner" | "over-under" | "both-score"
 
   constructor(fields: Partial<Market> = {}) {
     this.id = fields.id || 0;
@@ -50,6 +55,10 @@ class Market {
     this.resolvedOutcome = fields.resolvedOutcome ?? -1;
     this.status = fields.status || "active";
     this.totalBets = fields.totalBets || 0;
+    this.espnEventId = fields.espnEventId || "";
+    this.sport = fields.sport || "";
+    this.league = fields.league || "";
+    this.marketType = fields.marketType || "winner";
   }
 }
 
@@ -136,6 +145,10 @@ class NearCast {
     category,
     betsEndDate,
     resolutionDate,
+    espnEventId,
+    sport,
+    league,
+    marketType,
   }: {
     question: string;
     description: string;
@@ -143,6 +156,10 @@ class NearCast {
     category: string;
     betsEndDate: string; // timestamp в наносекундах
     resolutionDate: string; // timestamp в наносекундах
+    espnEventId?: string; // ESPN event ID для OutLayer resolution
+    sport?: string; // ESPN sport path
+    league?: string; // ESPN league path
+    marketType?: string; // тип рынка
   }): number {
     const sender = near.predecessorAccountId();
     const now = near.blockTimestamp();
@@ -205,6 +222,10 @@ class NearCast {
       resolvedOutcome: -1,
       status: "active",
       totalBets: 0,
+      espnEventId: espnEventId || "",
+      sport: sport || "",
+      league: league || "",
+      marketType: marketType || "winner",
     });
 
     this.markets.set(id.toString(), JSON.stringify(market));
@@ -378,6 +399,83 @@ class NearCast {
 
     near.log(
       `Рынок #${market_id} аннулирован (void)${reasoning ? ` — ${reasoning}` : ""}`
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // ESPN ORACLE — разрешение через верифицированные данные ESPN
+  // Вызывается ботом-релеером после проверки через OutLayer TEE
+  // ══════════════════════════════════════════════════════════
+
+  @call({})
+  submit_resolution({
+    market_id,
+    winning_outcome,
+    confidence,
+    reasoning,
+    home_score,
+    away_score,
+    event_status,
+  }: {
+    market_id: number;
+    winning_outcome: number;
+    confidence: number;
+    reasoning?: string;
+    home_score: number;
+    away_score: number;
+    event_status: string;
+  }): void {
+    const sender = near.predecessorAccountId();
+    assert(
+      sender === this.oracle || sender === this.owner,
+      "Только оракул или владелец может отправлять результаты ESPN"
+    );
+
+    const marketJson = this.markets.get(market_id.toString());
+    assert(marketJson !== null, "Рынок не найден");
+    const market: Market = JSON.parse(marketJson!);
+
+    assert(
+      market.espnEventId.length > 0,
+      "Рынок не является спортивным (нет espnEventId)"
+    );
+    assert(
+      market.status === "active" || market.status === "closed",
+      "Рынок уже разрешён или аннулирован"
+    );
+
+    const now = near.blockTimestamp();
+    assert(
+      now >= BigInt(market.resolutionDate),
+      "Время разрешения ещё не наступило"
+    );
+    assert(
+      event_status === "final",
+      "Событие ещё не завершено"
+    );
+
+    // Void если нет результата или низкая уверенность
+    if (winning_outcome === -1 || confidence < 0.3) {
+      market.resolvedOutcome = -2;
+      market.status = "voided";
+      this.markets.set(market_id.toString(), JSON.stringify(market));
+      near.log(
+        `Рынок #${market_id} аннулирован через ESPN Oracle: ${reasoning || "нет данных"}`
+      );
+      return;
+    }
+
+    assert(
+      winning_outcome >= 0 && winning_outcome < market.outcomes.length,
+      "Недопустимый исход"
+    );
+
+    market.resolvedOutcome = winning_outcome;
+    market.status = "resolved";
+    this.markets.set(market_id.toString(), JSON.stringify(market));
+
+    near.log(
+      `Рынок #${market_id} разрешён через ESPN Oracle: исход #${winning_outcome} ("${market.outcomes[winning_outcome]}") | Счёт: ${home_score}:${away_score}${reasoning ? ` — ${reasoning}` : ""}`
     );
   }
 
