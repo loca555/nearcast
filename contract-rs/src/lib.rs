@@ -661,15 +661,6 @@ impl NearCast {
     // АДМИНИСТРАТИВНЫЕ МЕТОДЫ
     // ══════════════════════════════════════════════════════════════
 
-    pub fn set_oracle(&mut self, oracle_id: AccountId) {
-        assert!(
-            env::predecessor_account_id() == self.owner,
-            "Только владелец"
-        );
-        self.oracle = oracle_id.clone();
-        log!("Оракул установлен: {}", oracle_id);
-    }
-
     /// Настройка OutLayer — GitHub repo с WASM Worker
     pub fn set_outlayer_config(
         &mut self,
