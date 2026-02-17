@@ -31,8 +31,8 @@ class Market {
   createdAt: string;
   betsEndDate: string; // timestamp (наносекунды) — дедлайн ставок
   resolutionDate: string; // timestamp (наносекунды) — когда оракул может разрешить
-  resolvedOutcome: number; // -1 = не разрешён
-  status: string; // "active" | "closed" | "resolved" | "cancelled"
+  resolvedOutcome: number; // -1 = не разрешён, -2 = void (матч отменён)
+  status: string; // "active" | "closed" | "resolved" | "voided"
   totalBets: number;
 
   constructor(fields: Partial<Market> = {}) {
@@ -319,7 +319,7 @@ class NearCast {
 
     assert(
       market.status === "active" || market.status === "closed",
-      "Рынок уже разрешён или отменён"
+      "Рынок уже разрешён или аннулирован"
     );
     assert(
       winning_outcome >= 0 && winning_outcome < market.outcomes.length,
@@ -344,7 +344,46 @@ class NearCast {
   }
 
   // ══════════════════════════════════════════════════════════
-  // ПОЛУЧЕНИЕ ВЫИГРЫША (зачисление на внутренний баланс)
+  // VOID — аннулирование рынка (матч отменён/перенесён)
+  // Все ставки возвращаются. Только оракул/владелец.
+  // ══════════════════════════════════════════════════════════
+
+  @call({})
+  void_market({
+    market_id,
+    reasoning,
+  }: {
+    market_id: number;
+    reasoning?: string;
+  }): void {
+    const sender = near.predecessorAccountId();
+    assert(
+      sender === this.oracle || sender === this.owner,
+      "Только оракул или владелец может аннулировать рынки"
+    );
+
+    const marketJson = this.markets.get(market_id.toString());
+    assert(marketJson !== null, "Рынок не найден");
+    const market: Market = JSON.parse(marketJson!);
+
+    assert(
+      market.status === "active" || market.status === "closed",
+      "Рынок уже разрешён или аннулирован"
+    );
+
+    market.resolvedOutcome = -2;
+    market.status = "voided";
+
+    this.markets.set(market_id.toString(), JSON.stringify(market));
+
+    near.log(
+      `Рынок #${market_id} аннулирован (void)${reasoning ? ` — ${reasoning}` : ""}`
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // ПОЛУЧЕНИЕ ВЫИГРЫША / ВОЗВРАТ (зачисление на внутренний баланс)
+  // Работает для resolved (выигрыш) и voided (возврат) рынков
   // ══════════════════════════════════════════════════════════
 
   @call({})
@@ -355,40 +394,49 @@ class NearCast {
     assert(marketJson !== null, "Рынок не найден");
     const market: Market = JSON.parse(marketJson!);
 
-    assert(market.status === "resolved", "Рынок ещё не разрешён");
+    assert(
+      market.status === "resolved" || market.status === "voided",
+      "Рынок ещё не разрешён и не аннулирован"
+    );
 
-    // Находим ставки пользователя на этот рынок
     const betsJson = this.marketBets.get(market_id.toString()) || "[]";
     const allBets: Bet[] = JSON.parse(betsJson);
 
-    let totalUserWinningBet = BigInt(0);
+    let payout = BigInt(0);
     let hasClaimed = false;
     const userBetIndices: number[] = [];
 
-    for (let i = 0; i < allBets.length; i++) {
-      const bet = allBets[i];
-      if (bet.user === sender && bet.outcome === market.resolvedOutcome) {
-        if (bet.claimed) {
-          hasClaimed = true;
-          break;
+    if (market.status === "voided") {
+      // Void — возвращаем все ставки пользователя
+      for (let i = 0; i < allBets.length; i++) {
+        const bet = allBets[i];
+        if (bet.user === sender) {
+          if (bet.claimed) { hasClaimed = true; break; }
+          payout += BigInt(bet.amount);
+          userBetIndices.push(i);
         }
-        totalUserWinningBet += BigInt(bet.amount);
-        userBetIndices.push(i);
+      }
+    } else {
+      // Resolved — выигрыш только для правильного исхода
+      for (let i = 0; i < allBets.length; i++) {
+        const bet = allBets[i];
+        if (bet.user === sender && bet.outcome === market.resolvedOutcome) {
+          if (bet.claimed) { hasClaimed = true; break; }
+          payout += BigInt(bet.amount);
+          userBetIndices.push(i);
+        }
+      }
+
+      // Пересчитываем выигрыш: (ставка / пул победителей) * весь пул
+      if (payout > BigInt(0)) {
+        const totalPool = BigInt(market.totalPool);
+        const winningPool = BigInt(market.outcomePools[market.resolvedOutcome]);
+        payout = (payout * totalPool) / winningPool;
       }
     }
 
     assert(!hasClaimed, "Выигрыш уже получен");
-    assert(
-      totalUserWinningBet > BigInt(0),
-      "У вас нет выигрышных ставок на этом рынке"
-    );
-
-    // Считаем выигрыш — 100% пула распределяется победителям
-    const totalPool = BigInt(market.totalPool);
-    const winningPool = BigInt(market.outcomePools[market.resolvedOutcome]);
-
-    // Доля пользователя: (его ставка / выигрышный пул) * весь пул
-    const userWinnings = (totalUserWinningBet * totalPool) / winningPool;
+    assert(payout > BigInt(0), "У вас нет ставок для получения на этом рынке");
 
     // Помечаем ставки как полученные
     for (const idx of userBetIndices) {
@@ -400,96 +448,22 @@ class NearCast {
     const userBetsJson = this.userBets.get(sender) || "[]";
     const userBets: Bet[] = JSON.parse(userBetsJson);
     for (const ub of userBets) {
-      if (ub.marketId === market_id && ub.outcome === market.resolvedOutcome) {
-        ub.claimed = true;
+      if (ub.marketId === market_id) {
+        if (market.status === "voided" || ub.outcome === market.resolvedOutcome) {
+          ub.claimed = true;
+        }
       }
     }
     this.userBets.set(sender, JSON.stringify(userBets));
 
-    // Зачисляем выигрыш на внутренний баланс
-    const currentBalance = BigInt(this.balances.get(sender) || "0");
-    this.balances.set(sender, (currentBalance + userWinnings).toString());
-
-    near.log(
-      `Выигрыш: ${sender} получил ${userWinnings} yoctoNEAR на баланс с рынка #${market_id}`
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════
-  // ОТМЕНА РЫНКА
-  // ══════════════════════════════════════════════════════════
-
-  @call({})
-  cancel_market({ market_id }: { market_id: number }): void {
-    const sender = near.predecessorAccountId();
-    const marketJson = this.markets.get(market_id.toString());
-    assert(marketJson !== null, "Рынок не найден");
-    const market: Market = JSON.parse(marketJson!);
-
-    assert(
-      market.status === "active" || market.status === "closed",
-      "Рынок уже разрешён или отменён"
-    );
-
-    // Создатель может отменить только если нет ставок
-    // Оракул/владелец может отменить всегда
-    if (sender === market.creator) {
-      assert(
-        BigInt(market.totalPool) === BigInt(0),
-        "Создатель может отменить только рынок без ставок"
-      );
-    } else {
-      assert(
-        sender === this.oracle || sender === this.owner,
-        "Только создатель, оракул или владелец может отменить рынок"
-      );
-    }
-
-    market.status = "cancelled";
-    this.markets.set(market_id.toString(), JSON.stringify(market));
-
-    near.log(`Рынок #${market_id} отменён пользователем ${sender}`);
-  }
-
-  // Возврат ставок после отмены рынка (на внутренний баланс)
-  @call({})
-  claim_refund({ market_id }: { market_id: number }): void {
-    const sender = near.predecessorAccountId();
-
-    const marketJson = this.markets.get(market_id.toString());
-    assert(marketJson !== null, "Рынок не найден");
-    const market: Market = JSON.parse(marketJson!);
-
-    assert(market.status === "cancelled", "Рынок не отменён");
-
-    // Находим ставки пользователя
-    const betsJson = this.marketBets.get(market_id.toString()) || "[]";
-    const allBets: Bet[] = JSON.parse(betsJson);
-
-    let totalRefund = BigInt(0);
-    const userBetIndices: number[] = [];
-
-    for (let i = 0; i < allBets.length; i++) {
-      const bet = allBets[i];
-      if (bet.user === sender && !bet.claimed) {
-        totalRefund += BigInt(bet.amount);
-        userBetIndices.push(i);
-      }
-    }
-
-    assert(totalRefund > BigInt(0), "Нечего возвращать");
-
-    // Помечаем как полученные
-    for (const idx of userBetIndices) {
-      allBets[idx].claimed = true;
-    }
-    this.marketBets.set(market_id.toString(), JSON.stringify(allBets));
-
     // Зачисляем на внутренний баланс
     const currentBalance = BigInt(this.balances.get(sender) || "0");
-    this.balances.set(sender, (currentBalance + totalRefund).toString());
+    this.balances.set(sender, (currentBalance + payout).toString());
 
-    near.log(`Возврат: ${sender} получил ${totalRefund} yoctoNEAR на баланс с отменённого рынка #${market_id}`);
+    const action = market.status === "voided" ? "Возврат" : "Выигрыш";
+    near.log(
+      `${action}: ${sender} получил ${payout} yoctoNEAR на баланс с рынка #${market_id}`
+    );
   }
 
   // ══════════════════════════════════════════════════════════
@@ -543,34 +517,39 @@ class NearCast {
     category?: string;
     status?: string;
   }): Market[] {
-    const start = from_index || 0;
+    const skip = from_index || 0;
     const max = limit || 50;
     const now = near.blockTimestamp();
+    const results: Market[] = [];
+    let skipped = 0;
 
-    const all = this.markets.toArray();
-    let results = all.map(([_, json]) => {
+    // Итерируем по ID в обратном порядке (новые первыми)
+    // Без toArray() — прямой доступ по ключу, экономим газ
+    for (let id = this.marketCount - 1; id >= 0 && results.length < max; id--) {
+      const json = this.markets.get(id.toString());
+      if (!json) continue;
+
       const market: Market = JSON.parse(json);
+
       // Автоматически обновляем статус
       if (market.status === "active" && now >= BigInt(market.betsEndDate)) {
         market.status = "closed";
       }
-      return market;
-    });
 
-    // Фильтры
-    if (category && category !== "все") {
-      results = results.filter((m) => m.category === category);
+      // Фильтры
+      if (category && category !== "все" && market.category !== category) continue;
+      if (status && status !== "все" && market.status !== status) continue;
+
+      // Пагинация — пропускаем первые skip совпадений
+      if (skipped < skip) {
+        skipped++;
+        continue;
+      }
+
+      results.push(market);
     }
-    if (status && status !== "все") {
-      results = results.filter((m) => m.status === status);
-    }
 
-    // Сортировка: новые первыми
-    results.sort(
-      (a, b) => Number(BigInt(b.createdAt) - BigInt(a.createdAt))
-    );
-
-    return results.slice(start, start + max);
+    return results;
   }
 
   @view({})

@@ -173,34 +173,3 @@ export async function claimWinnings(marketId) {
   });
 }
 
-// Забрать возврат при отмене (зачисляется на внутренний баланс)
-export async function claimRefund(marketId) {
-  const wallet = await selector.wallet();
-  return wallet.signAndSendTransaction({
-    receiverId: contractId,
-    actions: [
-      actionCreators.functionCall(
-        "claim_refund",
-        { market_id: marketId },
-        "30000000000000",
-        "0"
-      ),
-    ],
-  });
-}
-
-// Отменить рынок
-export async function cancelMarket(marketId) {
-  const wallet = await selector.wallet();
-  return wallet.signAndSendTransaction({
-    receiverId: contractId,
-    actions: [
-      actionCreators.functionCall(
-        "cancel_market",
-        { market_id: marketId },
-        "30000000000000",
-        "0"
-      ),
-    ],
-  });
-}

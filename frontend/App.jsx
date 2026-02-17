@@ -8,7 +8,6 @@ import {
   createMarket,
   placeBet,
   claimWinnings,
-  claimRefund,
   deposit as walletDeposit,
   withdraw as walletWithdraw,
 } from "./near-wallet.js";
@@ -21,9 +20,9 @@ import "@near-wallet-selector/modal-ui/styles.css";
 const TRANSLATIONS = {
   ru: {
     nav: { markets: "Рынки", create: "+ Создать", resolved: "Завершённые", portfolio: "Портфель", connect: "Подключить" },
-    status: { active: "Активный", closed: "In-play", resolved: "Resolved", cancelled: "Отменён", resolvedWon: (w) => `Resolved: ${w} won` },
+    status: { active: "Активный", closed: "In-play", resolved: "Resolved", voided: "Аннулирован", resolvedWon: (w) => `Resolved: ${w} won` },
     stats: { markets: "Рынков", volume: "Объём (NEAR)" },
-    filters: { all: "Все", active: "Активный", inPlay: "In-play", resolved: "Resolved", cancelled: "Отменённые" },
+    filters: { all: "Все", active: "Активный", inPlay: "In-play", resolved: "Resolved", voided: "Аннулированные" },
     sort: { label: "Сортировка", endDate: "Дата окончания", volume: "Объём", newest: "Новые" },
     market: {
       pool: "Пул", bets: "Ставок", outcomes: "Исходов", until: "До", resolution: "Resolution",
@@ -31,7 +30,7 @@ const TRANSLATIONS = {
       outcomesTitle: "Исходы", available: "Доступно", amountNear: "Сумма NEAR",
       placeBet: "Поставить", selectOutcome: "Выберите исход", minBet: "Минимум 0.1 NEAR",
       betAccepted: "Ставка принята!", claimWinnings: "Забрать выигрыш", claimRefund: "Забрать возврат",
-      winningsDeposited: "Выигрыш зачислен!", refundDeposited: "Возврат зачислен!",
+      winningsDeposited: "Средства зачислены!", refundDeposited: "Возврат зачислен!",
     },
     balance: {
       title: "Баланс на платформе", deposit: "Пополнить", withdraw: "Вывести", cancel: "Отмена",
@@ -62,9 +61,9 @@ const TRANSLATIONS = {
   },
   en: {
     nav: { markets: "Markets", create: "+ Create", resolved: "Resolved", portfolio: "Portfolio", connect: "Connect" },
-    status: { active: "Active", closed: "In-play", resolved: "Resolved", cancelled: "Cancelled", resolvedWon: (w) => `Resolved: ${w} won` },
+    status: { active: "Active", closed: "In-play", resolved: "Resolved", voided: "Voided", resolvedWon: (w) => `Resolved: ${w} won` },
     stats: { markets: "Markets", volume: "Volume (NEAR)" },
-    filters: { all: "All", active: "Active", inPlay: "In-play", resolved: "Resolved", cancelled: "Cancelled" },
+    filters: { all: "All", active: "Active", inPlay: "In-play", resolved: "Resolved", voided: "Voided" },
     sort: { label: "Sort", endDate: "End Date", volume: "Volume", newest: "Newest" },
     market: {
       pool: "Pool", bets: "Bets", outcomes: "Outcomes", until: "Until", resolution: "Resolution",
@@ -170,7 +169,7 @@ function getStyles(th) {
   };
 }
 
-const STATUS_COLORS = { active: "#22c55e", closed: "#f59e0b", resolved: "#3b82f6", cancelled: "#ef4444" };
+const STATUS_COLORS = { active: "#22c55e", closed: "#f59e0b", resolved: "#3b82f6", voided: "#ef4444" };
 
 // ══════════════════════════════════════════════════════════════
 // УТИЛИТЫ
@@ -205,7 +204,7 @@ function getStatusLabel(market, t) {
     const winner = idx != null && market.outcomes?.[idx];
     return winner ? t.status.resolvedWon(winner) : t.status.resolved;
   }
-  if (s === "cancelled") return t.status.cancelled;
+  if (s === "voided") return t.status.voided;
   return s;
 }
 
@@ -603,7 +602,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
   // Проверяем, есть ли у пользователя невостребованные выигрышные ставки или ставки для возврата
   const myBets = (userBets || []).filter((b) => b.marketId === market.id);
   const hasUnclaimedWin = market.status === "resolved" && myBets.some((b) => b.outcome === market.resolvedOutcome && !b.claimed);
-  const hasUnclaimedRefund = market.status === "cancelled" && myBets.some((b) => !b.claimed);
+  const hasUnclaimedRefund = market.status === "voided" && myBets.some((b) => !b.claimed);
   const canClaim = hasUnclaimedWin || hasUnclaimedRefund;
 
   const handleBet = async () => {
@@ -620,8 +619,8 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
   const handleClaim = async () => {
     setLoading(true); setMessage("");
     try {
-      if (market.status === "resolved") { await claimWinnings(market.id); setMessage(t.market.winningsDeposited); }
-      else if (market.status === "cancelled") { await claimRefund(market.id); setMessage(t.market.refundDeposited); }
+      await claimWinnings(market.id);
+      setMessage(t.market.winningsDeposited);
       onRefresh();
     } catch (err) { setMessage(`${t.error}: ${err.message}`); }
     setLoading(false);
@@ -959,7 +958,7 @@ function ResolvedMarkets({ onOpen }) {
         const res = await fetch("/api/markets?limit=100000");
         const data = await res.json();
         const all = Array.isArray(data) ? data : [];
-        setMarkets(all.filter((m) => m.status === "resolved" || m.status === "closed" || m.status === "cancelled"));
+        setMarkets(all.filter((m) => m.status === "resolved" || m.status === "closed" || m.status === "voided"));
       } catch (err) { console.error("Load error:", err); }
       setLoading(false);
     }
@@ -972,7 +971,7 @@ function ResolvedMarkets({ onOpen }) {
     <>
       <h2 style={{ fontSize: 22, marginBottom: 20 }}>{t.resolved.title}</h2>
       <div style={S.filters}>
-        {[["all", t.filters.all], ["resolved", t.filters.resolved], ["closed", t.filters.inPlay], ["cancelled", t.filters.cancelled]].map(([key, label]) => (
+        {[["all", t.filters.all], ["resolved", t.filters.resolved], ["closed", t.filters.inPlay], ["voided", t.filters.voided]].map(([key, label]) => (
           <button key={key} style={S.filterBtn(filter === key)} onClick={() => setFilter(key)}>
             {label}
             {key !== "all" && <span style={{ marginLeft: 4, opacity: 0.6 }}>({markets.filter((m) => m.status === key).length})</span>}
@@ -1047,7 +1046,7 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
     const bets = betsByMarket[mid];
     if (!market) return false;
     if (market.status === "resolved") return bets.some((b) => b.outcome === market.resolvedOutcome && !b.claimed);
-    if (market.status === "cancelled") return bets.some((b) => !b.claimed);
+    if (market.status === "voided") return bets.some((b) => !b.claimed);
     return false;
   });
 
@@ -1057,8 +1056,7 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
     for (const mid of claimableMarketIds) {
       const market = markets.find((m) => m.id === mid);
       try {
-        if (market?.status === "resolved") await claimWinnings(mid);
-        else if (market?.status === "cancelled") await claimRefund(mid);
+        await claimWinnings(mid);
         ok++;
       } catch { fail++; }
     }

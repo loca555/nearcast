@@ -8,7 +8,7 @@
 import Database from "better-sqlite3";
 import config from "../config.js";
 import { chatCompletion, getResponseText, getUsage } from "./ai-client.js";
-import { getMarkets, getMarket, resolveMarket } from "./near.js";
+import { getMarkets, getMarket, resolveMarket, voidMarket } from "./near.js";
 import { checkBudget, trackUsage } from "./spending-tracker.js";
 
 let db = null;
@@ -59,12 +59,13 @@ CATEGORY: ${market.category}
 INSTRUCTIONS:
 1. Search for the actual result of this event
 2. If the event has already happened and the result is known — pick the correct outcome
-3. If the result is ambiguous or the event hasn't happened — pick the most likely outcome
-4. Respond STRICTLY in JSON format
+3. If the event was cancelled, postponed, or you cannot find any information about it — set winning_outcome to -1
+4. If the result is ambiguous or the event hasn't happened yet — set confidence very low (below 0.3)
+5. Respond STRICTLY in JSON format
 
 RESPONSE FORMAT (JSON only, nothing else):
 {
-  "winning_outcome": <outcome number from 0 to ${market.outcomes.length - 1}>,
+  "winning_outcome": <outcome number from 0 to ${market.outcomes.length - 1}, or -1 if event not found/cancelled>,
   "confidence": <confidence from 0.0 to 1.0>,
   "reasoning": "<explanation in Russian, 1-3 sentences>"
 }`;
@@ -109,12 +110,34 @@ async function resolveOneMarket(market) {
     const aiResult = await askAI(market);
     console.log(
       `[oracle] AI ответ для #${market.id}: исход=${aiResult.winning_outcome} ` +
-      `(${market.outcomes[aiResult.winning_outcome]}), уверенность=${aiResult.confidence}`
+      `(${market.outcomes[aiResult.winning_outcome] || "VOID"}), уверенность=${aiResult.confidence}`
     );
 
-    // Проверяем что confidence достаточна
-    if (aiResult.confidence < 0.3) {
-      console.log(`[oracle] Уверенность слишком низкая (${aiResult.confidence}), пропускаю рынок #${market.id}`);
+    // Если AI не нашёл событие или уверенность слишком низкая — аннулируем рынок (void)
+    const shouldVoid = aiResult.winning_outcome === -1 || aiResult.confidence < 0.3;
+
+    if (shouldVoid) {
+      const reason = aiResult.winning_outcome === -1
+        ? `Событие не найдено или отменено: ${aiResult.reasoning}`
+        : `Низкая уверенность AI (${aiResult.confidence}): ${aiResult.reasoning}`;
+
+      console.log(`[oracle] Аннулирую рынок #${market.id}: ${reason}`);
+
+      const txHash = await voidMarket(market.id, reason);
+
+      database.prepare(`
+        INSERT INTO resolutions (market_id, question, outcomes, winning_outcome, reasoning, ai_response, tx_hash, status)
+        VALUES (?, ?, ?, -2, ?, ?, ?, 'voided')
+      `).run(
+        market.id,
+        market.question,
+        JSON.stringify(market.outcomes),
+        reason,
+        JSON.stringify(aiResult),
+        txHash
+      );
+
+      console.log(`[oracle] ✓ Рынок #${market.id} аннулирован! TX: ${txHash}`);
       return;
     }
 
@@ -189,6 +212,7 @@ export async function manualResolve(marketId) {
   const market = await getMarket(marketId);
   if (!market) throw new Error(`Рынок #${marketId} не найден`);
   if (market.status === "resolved") throw new Error("Рынок уже разрешён");
+  if (market.status === "voided") throw new Error("Рынок аннулирован");
 
   await resolveOneMarket(market);
   return { success: true, marketId };

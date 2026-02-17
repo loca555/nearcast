@@ -73,7 +73,33 @@ export async function viewContract(methodName, args = {}) {
 }
 
 export async function getMarkets(params = {}) {
-  return (await viewContract("get_markets", params)) || [];
+  const requestedLimit = params.limit || 50;
+  const batchSize = 100;
+
+  // Если запрос небольшой — одним вызовом
+  if (requestedLimit <= batchSize) {
+    return (await viewContract("get_markets", params)) || [];
+  }
+
+  // Пакетная загрузка для больших запросов
+  let allMarkets = [];
+  let fromIndex = params.from_index || 0;
+
+  while (allMarkets.length < requestedLimit) {
+    const batch = await viewContract("get_markets", {
+      ...params,
+      from_index: fromIndex,
+      limit: batchSize,
+    });
+
+    if (!batch || batch.length === 0) break;
+    allMarkets = allMarkets.concat(batch);
+    fromIndex += batch.length;
+
+    if (batch.length < batchSize) break; // последняя страница
+  }
+
+  return allMarkets.slice(0, requestedLimit);
 }
 
 export async function getMarket(marketId) {
@@ -119,5 +145,26 @@ export async function resolveMarket(marketId, winningOutcome, reasoning = "") {
 
   const txHash = result.transaction?.hash || result.transaction_outcome?.id;
   console.log(`[near] Рынок #${marketId} разрешён. TX: ${txHash}`);
+  return txHash;
+}
+
+// ── Аннулирование рынка (void) — возврат всех ставок ─────────
+
+export async function voidMarket(marketId, reasoning = "") {
+  const account = await initOracleAccount();
+
+  const result = await account.functionCall({
+    contractId: config.near.contractId,
+    methodName: "void_market",
+    args: {
+      market_id: marketId,
+      reasoning,
+    },
+    gas: "100000000000000", // 100 TGas
+    attachedDeposit: "0",
+  });
+
+  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
+  console.log(`[near] Рынок #${marketId} аннулирован (void). TX: ${txHash}`);
   return txHash;
 }
