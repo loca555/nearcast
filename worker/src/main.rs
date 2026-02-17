@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
-use wasi_http_client::{Client, Method, Request};
+use wasi_http_client::Client;
 
 // ── Входные данные (из stdin) ────────────────────────────────────
 
@@ -130,15 +130,15 @@ fn run() -> Result<Output, Box<dyn std::error::Error>> {
     );
 
     // HTTP GET к ESPN (внутри TEE — запрос невозможно подделать)
-    let client = Client::new();
-    let request = Request::new(Method::Get, &url);
-    let response = client.send(request)?;
+    let response = Client::new()
+        .get(&url)
+        .send()?;
 
     if response.status() != 200 {
         return Ok(Output::error(&format!("ESPN HTTP {}", response.status())));
     }
 
-    let body = String::from_utf8_lossy(response.body()).to_string();
+    let body = String::from_utf8_lossy(&response.body()?).to_string();
     let espn: ESPNResponse = serde_json::from_str(&body)
         .map_err(|e| format!("ESPN JSON parse: {}", e))?;
 

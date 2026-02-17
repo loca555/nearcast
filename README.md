@@ -6,7 +6,8 @@ Decentralized prediction market platform on NEAR blockchain with an AI oracle fo
 
 - **Prediction Markets** — create and bet on sports event outcomes
 - **AI Oracle** — automatic market resolution using Venice AI (Claude Sonnet 4.5)
-- **Sports Data** — real match schedules via API-Sports
+- **Sports Data** — real match schedules via ESPN API (free, no key required)
+- **ESPN Oracle** — permissionless sports market resolution via OutLayer TEE + ESPN scores
 - **AI Market Generation** — AI creates market questions, outcomes, and deadlines from a selected match
 - **NEAR Wallet** — connect via MyNearWallet, deposit/withdraw balance
 - **i18n** — Russian / English interface with language toggle
@@ -26,13 +27,14 @@ nearcast/
 │       ├── oracle.js          # AI oracle (auto-resolve markets)
 │       ├── ai-client.js       # Venice AI client (OpenAI-compatible)
 │       ├── market-validator.js # Sports config, AI market generation
-│       ├── sports-api.js      # API-Sports integration
+│       ├── sports-api.js      # ESPN API integration
 │       └── spending-tracker.js # API budget tracking (SQLite)
 ├── frontend/
 │   ├── App.jsx                # React SPA (single-file)
 │   ├── near-wallet.js         # NEAR Wallet Selector wrapper
 │   └── index.html
-├── contract/                  # NEAR smart contract (Rust)
+├── contract-rs/               # NEAR smart contract (Rust)
+├── worker/                    # ESPN Oracle WASM worker (OutLayer TEE)
 ├── vite.config.js
 └── package.json
 ```
@@ -46,7 +48,6 @@ nearcast/
 - Node.js 18+
 - NEAR testnet account with deployed contract
 - Venice AI API key
-- API-Sports key (optional, for live schedules)
 
 ### Environment Variables
 
@@ -64,9 +65,6 @@ ORACLE_PRIVATE_KEY=ed25519:...
 # Venice AI
 VENICE_API_KEY=your-venice-key
 AI_MODEL=claude-sonnet-45
-
-# API-Sports (optional)
-API_SPORTS_KEY=your-api-sports-key
 
 # Budget
 API_BUDGET_LIMIT=5
