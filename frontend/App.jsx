@@ -662,7 +662,12 @@ function CreateMarket({ account, onCreated }) {
   const countries = sport && sportsConfig?.sports?.[sport]?.countries ? Object.entries(sportsConfig.sports[sport].countries) : [];
   const leagues = sport && country && sportsConfig?.sports?.[sport]?.countries?.[country]?.leagues ? Object.entries(sportsConfig.sports[sport].countries[country].leagues) : [];
 
-  const handleSportChange = (val) => { setSport(val); setCountry(""); setLeague(""); };
+  const handleSportChange = (val) => {
+    setSport(val); setCountry(""); setLeague("");
+    // Сбрасываем тип рынка на первый допустимый для нового спорта
+    const allowed = val && sportsConfig?.sports?.[val]?.marketTypes;
+    if (allowed && !allowed.includes(marketType)) setMarketType(allowed[0] || "winner");
+  };
   const handleCountryChange = (val) => { setCountry(val); setLeague(""); };
 
   const handleLoadMatches = async () => {
@@ -707,7 +712,12 @@ function CreateMarket({ account, onCreated }) {
   if (!sportsConfig) return <div style={{ color: th.dimmed, padding: 40, textAlign: "center" }}>{t.loading}</div>;
 
   const sportsList = Object.entries(sportsConfig.sports);
-  const marketTypes = Object.entries(sportsConfig.marketTypes);
+  const allMarketTypes = Object.entries(sportsConfig.marketTypes);
+  // Фильтруем типы рынков по выбранному спорту
+  const allowedTypes = sport && sportsConfig.sports[sport]?.marketTypes;
+  const marketTypes = allowedTypes
+    ? allMarketTypes.filter(([key]) => allowedTypes.includes(key))
+    : allMarketTypes;
   const stepNames = t.create.steps;
   const stepKeys = ["league", "matches", "market", "confirm"];
   const stepNum = stepKeys.indexOf(step) + 1;

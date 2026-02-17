@@ -90,6 +90,7 @@ export const SPORTS_CONFIG = {
   football: {
     label: "Футбол", labelEn: "Football",
     search: "Football Soccer",
+    marketTypes: ["winner", "over-under", "both-score", "correct-score", "handicap", "first-half"],
     countries: {
       england: {
         label: "Англия", labelEn: "England",
@@ -200,6 +201,7 @@ export const SPORTS_CONFIG = {
   basketball: {
     label: "Баскетбол", labelEn: "Basketball",
     search: "Basketball",
+    marketTypes: ["winner", "over-under", "handicap"],
     countries: {
       usa: {
         label: "США", labelEn: "USA",
@@ -213,6 +215,7 @@ export const SPORTS_CONFIG = {
   hockey: {
     label: "Хоккей", labelEn: "Hockey",
     search: "Ice Hockey",
+    marketTypes: ["winner", "over-under", "handicap"],
     countries: {
       "north-america": {
         label: "США/Канада", labelEn: "USA/Canada",
@@ -225,6 +228,7 @@ export const SPORTS_CONFIG = {
   "american-football": {
     label: "Американский футбол", labelEn: "American Football",
     search: "American Football",
+    marketTypes: ["winner", "over-under", "handicap"],
     countries: {
       usa: {
         label: "США", labelEn: "USA",
@@ -238,6 +242,7 @@ export const SPORTS_CONFIG = {
   baseball: {
     label: "Бейсбол", labelEn: "Baseball",
     search: "Baseball",
+    marketTypes: ["winner", "over-under", "handicap"],
     countries: {
       usa: {
         label: "США", labelEn: "USA",
@@ -250,6 +255,7 @@ export const SPORTS_CONFIG = {
   mma: {
     label: "MMA", labelEn: "MMA",
     search: "MMA Mixed Martial Arts",
+    marketTypes: ["winner", "over-under"],
     countries: {
       international: {
         label: "Международный", labelEn: "International",
@@ -262,6 +268,7 @@ export const SPORTS_CONFIG = {
   tennis: {
     label: "Теннис", labelEn: "Tennis",
     search: "Tennis",
+    marketTypes: ["winner", "over-under", "handicap"],
     countries: {
       international: {
         label: "Международный", labelEn: "International",
@@ -275,6 +282,7 @@ export const SPORTS_CONFIG = {
   racing: {
     label: "Автоспорт", labelEn: "Motorsport",
     search: "Motorsport Racing",
+    marketTypes: ["winner"],
     countries: {
       international: {
         label: "Международный", labelEn: "International",
