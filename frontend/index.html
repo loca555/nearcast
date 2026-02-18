@@ -11,6 +11,12 @@
     <style>
       *, *::before, *::after { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; }
+      /* Скроллбар под тёмную тему */
+      html { scrollbar-color: #334155 #0a0e1a; }
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { background: #0a0e1a; }
+      ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
   </head>
   <body>
