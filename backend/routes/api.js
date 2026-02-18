@@ -11,6 +11,7 @@ import {
   getUserBets,
   getStats,
   getBalance,
+  seedLiquidity,
 } from "../services/near.js";
 import { getResolutionLogs } from "../services/oracle.js";
 import {
@@ -190,6 +191,18 @@ router.post("/trigger-reclaim-resolution/:id", async (req, res, next) => {
   try {
     const { resolveViaReclaim } = await import("../services/reclaim-resolver.js");
     const result = await resolveViaReclaim(parseInt(req.params.id));
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Seed Liquidity — авто-ставки на все исходы ──────────────────
+
+// Вызывается после создания рынка для seed ликвидности
+router.post("/seed-liquidity/:id", async (req, res, next) => {
+  try {
+    const result = await seedLiquidity(parseInt(req.params.id));
     res.json(result);
   } catch (err) {
     next(err);

@@ -126,6 +126,60 @@ export async function getBalance(accountId) {
   return (await viewContract("get_balance", { account_id: accountId })) || "0";
 }
 
+// ── Seed Liquidity — авто-ставки на все исходы нового рынка ───────
+
+const BET_AMOUNT = "1000000000000000000000000"; // 1 NEAR
+
+export async function seedLiquidity(marketId) {
+  const account = await initOracleAccount();
+
+  // Получаем данные рынка
+  const market = await viewContract("get_market", { market_id: marketId });
+  if (!market) throw new Error(`Рынок #${marketId} не найден`);
+  if (market.status !== "active") throw new Error(`Рынок #${marketId} не активен (${market.status})`);
+
+  const outcomes = market.outcomes || [];
+  const neededYocto = BigInt(BET_AMOUNT) * BigInt(outcomes.length);
+
+  // Проверяем баланс на контракте, при необходимости пополняем
+  const balance = await viewContract("get_balance", { account_id: config.oracle.accountId });
+  const currentBalance = BigInt(balance || "0");
+
+  if (currentBalance < neededYocto) {
+    const depositAmount = neededYocto - currentBalance + BigInt(BET_AMOUNT); // +1 NEAR запас
+    console.log(`[liquidity] Депозит ${Number(depositAmount) / 1e24} NEAR в контракт`);
+    await account.functionCall({
+      contractId: config.near.contractId,
+      methodName: "deposit",
+      args: {},
+      gas: "30000000000000",
+      attachedDeposit: depositAmount.toString(),
+    });
+  }
+
+  // Ставим на каждый исход
+  const results = [];
+  for (let i = 0; i < outcomes.length; i++) {
+    try {
+      await account.functionCall({
+        contractId: config.near.contractId,
+        methodName: "place_bet",
+        args: { market_id: marketId, outcome: i, amount: BET_AMOUNT },
+        gas: "30000000000000",
+        attachedDeposit: "0",
+      });
+      results.push({ outcome: i, label: outcomes[i], status: "ok" });
+      console.log(`[liquidity] Рынок #${marketId}, исход "${outcomes[i]}" — 1 NEAR`);
+    } catch (err) {
+      results.push({ outcome: i, label: outcomes[i], status: "error", error: err.message });
+      console.log(`[liquidity] Рынок #${marketId}, исход "${outcomes[i]}" — ОШИБКА: ${err.message?.slice(0, 50)}`);
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
+  return { marketId, bets: results, total: outcomes.length };
+}
+
 // ── ESPN Oracle — запрос разрешения через OutLayer (on-chain) ────
 
 export async function requestResolution(marketId) {

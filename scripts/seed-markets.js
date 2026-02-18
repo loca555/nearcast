@@ -5,8 +5,9 @@
  * 2. Получает реальные матчи из ESPN API (7 дней вперёд)
  * 3. Создаёт рынки "Who will win?" для каждого матча
  *
- * Запуск: node scripts/seed-markets.js
- * Отмена фейков: node scripts/seed-markets.js --cancel-range 7 106
+ * Запуск: node scripts/seed-markets.js --limit 30
+ * С seed liquidity: node scripts/seed-markets.js --limit 30 --bet
+ * Отмена рынков: node scripts/seed-markets.js --cancel-range 7 106
  */
 
 import { connect, keyStores, KeyPair } from "near-api-js";
@@ -49,6 +50,7 @@ async function fetchESPN(espnPath, from, to) {
     const away = competitors.find((c) => c.homeAway === "away") || competitors[1];
 
     return {
+      id: event.id, // ESPN Event ID для OutLayer
       teamA: home?.team?.displayName || home?.athlete?.displayName || "",
       teamB: away?.team?.displayName || away?.athlete?.displayName || "",
       date: event.date,
@@ -98,6 +100,7 @@ const LEAGUES = [
 
 const MS_TO_NS = 1_000_000;
 const HOUR_MS = 3600_000;
+const BET_AMOUNT = "1000000000000000000000000"; // 1 NEAR в yoctoNEAR
 
 function toNano(isoDate) {
   return (new Date(isoDate).getTime() * MS_TO_NS).toString();
@@ -145,11 +148,13 @@ async function cancelRange(account, fromId, toId) {
 
 // ── Создание рынков из реальных матчей ────────────────────────
 
-async function seedReal(account) {
+async function seedReal(account, maxMarkets = 50, autoBet = false) {
   const today = new Date().toISOString().split("T")[0];
   const endDate = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
 
-  console.log(`\n  Получаю реальные матчи из ESPN (${today} → ${endDate})...\n`);
+  console.log(`\n  Получаю реальные матчи из ESPN (${today} → ${endDate})...`);
+  if (autoBet) console.log(`  Авто-ставки: 1 NEAR на каждый исход\n`);
+  else console.log();
 
   const allMatches = [];
 
@@ -157,7 +162,7 @@ async function seedReal(account) {
     try {
       const matches = await fetchESPN(league.espn, today, endDate);
       for (const m of matches) {
-        allMatches.push({ ...m, sport: league.sport, league: league.label });
+        allMatches.push({ ...m, sport: league.sport, espnPath: league.espn, leagueLabel: league.label });
       }
       console.log(`  ${league.label.padEnd(25)} ${matches.length} матчей`);
     } catch (err) {
@@ -187,9 +192,34 @@ async function seedReal(account) {
   // Сортируем по дате
   unique.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  let created = 0, failed = 0;
+  // Авто-депозит для ставок (если --bet)
+  if (autoBet) {
+    // Считаем максимум исходов: football=3, остальные=2
+    const maxOutcomes = unique.slice(0, maxMarkets).reduce((sum, m) =>
+      sum + (m.sport === "football" ? 3 : 2), 0);
+    const depositNear = maxOutcomes + 2; // +2 запас
+    const depositYocto = BigInt(depositNear) * BigInt("1000000000000000000000000");
 
-  for (let i = 0; i < unique.length; i++) {
+    console.log(`  Депозит ${depositNear} NEAR в контракт для ставок...`);
+    try {
+      await account.functionCall({
+        contractId: CONTRACT_ID,
+        methodName: "deposit",
+        args: {},
+        gas: "30000000000000",
+        attachedDeposit: depositYocto.toString(),
+      });
+      console.log(`  Депозит выполнен!\n`);
+    } catch (err) {
+      console.log(`  Ошибка депозита: ${err.message?.slice(0, 60)}\n`);
+      console.log(`  Продолжаю без авто-ставок...\n`);
+      autoBet = false;
+    }
+  }
+
+  let created = 0, failed = 0, betsPlaced = 0;
+
+  for (let i = 0; i < unique.length && created < maxMarkets; i++) {
     const m = unique[i];
     const matchTime = new Date(m.date).getTime();
     const now = Date.now();
@@ -208,7 +238,11 @@ async function seedReal(account) {
       : [m.teamA, m.teamB];
 
     const question = `Who will win: ${m.teamA} vs ${m.teamB}?`;
-    const description = `${m.league}${m.round ? ` — ${m.round}` : ""} | ${new Date(m.date).toUTCString().slice(0, 22)}`;
+    const description = `${m.leagueLabel}${m.round ? ` — ${m.round}` : ""} | ${new Date(m.date).toUTCString().slice(0, 22)}`;
+
+    // ESPN метаданные из espnPath (например "soccer/eng.1")
+    const espnSport = m.espnPath.split("/")[0];   // "soccer", "basketball", ...
+    const espnLeague = m.espnPath.split("/")[1];   // "eng.1", "nba", ...
 
     try {
       const result = await account.functionCall({
@@ -219,16 +253,45 @@ async function seedReal(account) {
           description,
           outcomes,
           category: m.sport,
-          betsEndDate: (betsEndMs * MS_TO_NS).toString(),
-          resolutionDate: (resolutionMs * MS_TO_NS).toString(),
+          bets_end_date: (betsEndMs * MS_TO_NS).toString(),
+          resolution_date: (resolutionMs * MS_TO_NS).toString(),
+          espn_event_id: m.id,
+          sport: espnSport,
+          league: espnLeague,
+          market_type: "winner",
         },
         gas: "30000000000000",
         attachedDeposit: "0",
       });
 
-      const txHash = result.transaction?.hash || result.transaction_outcome?.id || "?";
       created++;
-      console.log(`  [${String(created).padStart(3)}] ${m.sport.padEnd(18)} ${question.slice(0, 60).padEnd(62)} ${m.league}`);
+      console.log(`  [${String(created).padStart(3)}] ${m.sport.padEnd(18)} ${question.slice(0, 60).padEnd(62)} ${m.leagueLabel}`);
+
+      // Авто-ставки: 1 NEAR на каждый исход (seed liquidity)
+      if (autoBet) {
+        // Получаем ID только что созданного рынка из stats
+        const stats = await account.viewFunction({
+          contractId: CONTRACT_ID, methodName: "get_stats", args: {},
+        });
+        const marketId = (stats.totalMarkets || stats.total_markets) - 1;
+
+        for (let oc = 0; oc < outcomes.length; oc++) {
+          try {
+            await account.functionCall({
+              contractId: CONTRACT_ID,
+              methodName: "place_bet",
+              args: { market_id: marketId, outcome: oc, amount: BET_AMOUNT },
+              gas: "30000000000000",
+              attachedDeposit: "0",
+            });
+            betsPlaced++;
+          } catch (betErr) {
+            console.log(`        [BET ERR] исход ${oc}: ${betErr.message?.slice(0, 50)}`);
+          }
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        console.log(`        ↳ ставки: ${outcomes.length} × 1 NEAR`);
+      }
     } catch (err) {
       failed++;
       console.error(`  [ERR] ${question.slice(0, 50)}  ${err.message?.slice(0, 60)}`);
@@ -238,7 +301,8 @@ async function seedReal(account) {
   }
 
   console.log(`\n  ════════════════════════════════════════`);
-  console.log(`  Создано: ${created}`);
+  console.log(`  Создано рынков: ${created}`);
+  if (betsPlaced > 0) console.log(`  Ставок (seed liquidity): ${betsPlaced}`);
   if (failed > 0) console.log(`  Ошибок: ${failed}`);
   console.log(`  ════════════════════════════════════════\n`);
 }
@@ -255,7 +319,10 @@ async function main() {
   if (args[0] === "--cancel-range" && args[1] && args[2]) {
     await cancelRange(account, parseInt(args[1]), parseInt(args[2]));
   } else {
-    await seedReal(account);
+    const limitIdx = args.indexOf("--limit");
+    const maxMarkets = limitIdx >= 0 ? parseInt(args[limitIdx + 1]) || 50 : 50;
+    const autoBet = args.includes("--bet");
+    await seedReal(account, maxMarkets, autoBet);
   }
 }
 

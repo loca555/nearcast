@@ -787,6 +787,12 @@ function CreateMarket({ account, onCreated }) {
         espnEventId: aiResult.espnEventId || "", sport: aiResult.sport || "", league: aiResult.league || "", marketType: aiResult.marketType || marketType,
       });
       setMessage(t.create.marketCreated);
+      // Seed liquidity — бэкенд ставит 1 NEAR на каждый исход
+      try {
+        const stats = await fetch("/api/stats").then(r => r.json());
+        const newMarketId = (stats.totalMarkets || 0) - 1;
+        if (newMarketId >= 0) fetch(`/api/seed-liquidity/${newMarketId}`, { method: "POST" });
+      } catch { /* seed liquidity — необязательный шаг */ }
       setTimeout(onCreated, 1500);
     } catch (err) { setMessage(`${t.error}: ${err.message}`); }
     setLoading(false);
