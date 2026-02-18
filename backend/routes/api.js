@@ -76,7 +76,7 @@ router.get("/markets/:id/bets", async (req, res, next) => {
 
 // ── Чат рынка ─────────────────────────────────────────────────
 
-import { getMessages, addMessage } from "../services/chat.js";
+import { getMessages, getReplies, addMessage } from "../services/chat.js";
 
 // Сообщения чата рынка
 router.get("/markets/:id/chat", (req, res, next) => {
@@ -91,15 +91,26 @@ router.get("/markets/:id/chat", (req, res, next) => {
   }
 });
 
-// Отправка сообщения в чат
+// Ответы на сообщение (тред)
+router.get("/markets/:id/chat/:messageId/replies", (req, res, next) => {
+  try {
+    const messageId = parseInt(req.params.messageId);
+    const replies = getReplies(messageId);
+    res.json(replies);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Отправка сообщения в чат (с поддержкой replyTo)
 router.post("/markets/:id/chat", (req, res, next) => {
   try {
     const marketId = parseInt(req.params.id);
-    const { accountId, message } = req.body;
-    const result = addMessage(marketId, accountId, message);
+    const { accountId, message, replyTo } = req.body;
+    const result = addMessage(marketId, accountId, message, replyTo || null);
     res.json(result);
   } catch (err) {
-    if (err.message.includes("required") || err.message.includes("empty") || err.message.includes("too long")) {
+    if (err.message.includes("required") || err.message.includes("empty") || err.message.includes("too long") || err.message.includes("not found")) {
       return res.status(400).json({ error: err.message });
     }
     next(err);

@@ -726,18 +726,20 @@ function MarketChat({ marketId, account }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [replyTo, setReplyTo] = useState(null); // {id, account_id, message}
+  const [expandedThreads, setExpandedThreads] = useState({}); // {parentId: [replies]}
+  const [loadingThreads, setLoadingThreads] = useState({});
   const lastIdRef = useRef(0);
   const chatEndRef = useRef(null);
   const containerRef = useRef(null);
+  const inputRef = useRef(null);
 
-  // Усечение account_id: first8...last4
   const shortAddr = (addr) => {
     if (!addr) return "???";
     if (addr.length <= 16) return addr;
     return addr.slice(0, 8) + "..." + addr.slice(-4);
   };
 
-  // Время из ISO строки
   const formatTime = (iso) => {
     if (!iso) return "";
     const d = new Date(iso.includes("Z") ? iso : iso + "Z");
@@ -748,43 +750,68 @@ function MarketChat({ marketId, account }) {
   const fetchMessages = useCallback(async (initial = false) => {
     try {
       const url = initial
-        ? `/api/markets/${marketId}/chat?limit=50`
+        ? `/api/markets/${marketId}/chat?limit=100`
         : `/api/markets/${marketId}/chat?after=${lastIdRef.current}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
-      if (data.length === 0) return;
+      if (data.length === 0 && !initial) return;
 
       if (initial) {
         setMessages(data);
         if (data.length > 0) lastIdRef.current = data[data.length - 1].id;
       } else {
-        // Добавляем только новые (для polling)
         setMessages((prev) => {
           const existingIds = new Set(prev.map((m) => m.id));
           const newMsgs = data.filter((m) => !existingIds.has(m.id));
           if (newMsgs.length === 0) return prev;
-          const updated = [...prev, ...newMsgs];
-          lastIdRef.current = updated[updated.length - 1].id;
-          return updated;
+          // Обновляем reply_count для существующих сообщений
+          const updated = prev.map((m) => {
+            const fresh = data.find((d) => d.id === m.id);
+            return fresh ? { ...m, reply_count: fresh.reply_count } : m;
+          });
+          const merged = [...updated, ...newMsgs];
+          lastIdRef.current = merged[merged.length - 1].id;
+          return merged;
         });
       }
     } catch { /* polling ошибки не критичны */ }
   }, [marketId]);
 
-  // Начальная загрузка + polling
   useEffect(() => {
     fetchMessages(true);
     const interval = setInterval(() => fetchMessages(false), 3000);
     return () => clearInterval(interval);
   }, [fetchMessages]);
 
-  // Auto-scroll при новых сообщениях
   useEffect(() => {
-    if (chatEndRef.current) {
+    if (chatEndRef.current && !replyTo) {
       chatEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [messages, replyTo]);
+
+  // Загрузить/скрыть тред
+  const toggleThread = async (parentId) => {
+    if (expandedThreads[parentId]) {
+      setExpandedThreads((prev) => { const next = { ...prev }; delete next[parentId]; return next; });
+      return;
+    }
+    setLoadingThreads((prev) => ({ ...prev, [parentId]: true }));
+    try {
+      const res = await fetch(`/api/markets/${marketId}/chat/${parentId}/replies`);
+      if (res.ok) {
+        const replies = await res.json();
+        setExpandedThreads((prev) => ({ ...prev, [parentId]: replies }));
+      }
+    } catch { /* */ }
+    setLoadingThreads((prev) => ({ ...prev, [parentId]: false }));
+  };
+
+  // Начать ответ
+  const startReply = (msg) => {
+    setReplyTo(msg);
+    if (inputRef.current) inputRef.current.focus();
+  };
 
   // Отправка сообщения
   const handleSend = async () => {
@@ -793,115 +820,144 @@ function MarketChat({ marketId, account }) {
 
     setSending(true);
     setInput("");
+    const currentReplyTo = replyTo;
+    setReplyTo(null);
 
-    // Optimistic update — сообщение появляется мгновенно
+    // Optimistic update
     const optimistic = {
-      id: Date.now(), // временный id
+      id: Date.now(),
       market_id: marketId,
       account_id: account.accountId,
       message: text,
+      reply_to: currentReplyTo?.id || null,
+      reply_count: 0,
       created_at: new Date().toISOString(),
       _optimistic: true,
     };
-    setMessages((prev) => [...prev, optimistic]);
+
+    if (currentReplyTo) {
+      // Добавляем в развёрнутый тред или в основной список
+      setExpandedThreads((prev) => {
+        if (prev[currentReplyTo.id]) {
+          return { ...prev, [currentReplyTo.id]: [...prev[currentReplyTo.id], optimistic] };
+        }
+        return { ...prev, [currentReplyTo.id]: [optimistic] };
+      });
+      // Увеличиваем reply_count
+      setMessages((prev) => prev.map((m) =>
+        m.id === currentReplyTo.id ? { ...m, reply_count: (m.reply_count || 0) + 1 } : m
+      ));
+    } else {
+      setMessages((prev) => [...prev, optimistic]);
+    }
 
     try {
       const res = await fetch(`/api/markets/${marketId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accountId: account.accountId, message: text }),
+        body: JSON.stringify({
+          accountId: account.accountId,
+          message: text,
+          replyTo: currentReplyTo?.id || null,
+        }),
       });
       if (res.ok) {
         const saved = await res.json();
-        // Заменяем optimistic на реальное
-        setMessages((prev) =>
-          prev.map((m) => (m._optimistic && m.id === optimistic.id ? saved : m))
-        );
-        lastIdRef.current = Math.max(lastIdRef.current, saved.id);
+        if (currentReplyTo) {
+          setExpandedThreads((prev) => {
+            const thread = prev[currentReplyTo.id] || [];
+            return { ...prev, [currentReplyTo.id]: thread.map((m) => m._optimistic && m.id === optimistic.id ? saved : m) };
+          });
+        } else {
+          setMessages((prev) => prev.map((m) => m._optimistic && m.id === optimistic.id ? saved : m));
+          lastIdRef.current = Math.max(lastIdRef.current, saved.id);
+        }
       }
-    } catch { /* ошибка — optimistic сообщение останется */ }
+    } catch { /* */ }
 
     setSending(false);
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Escape" && replyTo) { setReplyTo(null); }
+  };
+
+  // Фильтруем: показываем только top-level (reply_to === null)
+  const topLevel = messages.filter((m) => !m.reply_to);
+
+  // Рендер одного сообщения
+  const renderMsg = (msg, isReply = false) => {
+    const isMe = account && msg.account_id === account.accountId;
+    return (
+      <div key={msg.id} style={{ marginBottom: 6, opacity: msg._optimistic ? 0.6 : 1, paddingLeft: isReply ? 16 : 0, borderLeft: isReply ? `2px solid ${th.cardBorder}` : "none" }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: isMe ? th.accent : th.muted }}>
+          {isMe ? "You" : shortAddr(msg.account_id)}
+        </span>
+        <span style={{ fontSize: 11, color: th.dimmed, marginLeft: 6 }}>{formatTime(msg.created_at)}</span>
+        {account && !isReply && (
+          <span onClick={() => startReply(msg)} style={{ fontSize: 11, color: th.accent, marginLeft: 8, cursor: "pointer", opacity: 0.7 }}>Reply</span>
+        )}
+        <div style={{ fontSize: 14, color: th.text, marginTop: 2, wordBreak: "break-word" }}>{msg.message}</div>
+      </div>
+    );
   };
 
   return (
     <div style={{ marginTop: 20 }}>
-      <div style={{ fontSize: 15, fontWeight: 600, color: th.text, marginBottom: 10 }}>
-        Chat
-      </div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: th.text, marginBottom: 10 }}>Chat</div>
 
-      {/* Список сообщений */}
-      <div
-        ref={containerRef}
-        style={{
-          background: th.bg, border: `1px solid ${th.cardBorder}`, borderRadius: 10,
-          padding: 12, maxHeight: 300, overflowY: "auto", marginBottom: 10,
-          minHeight: 80,
-        }}
-      >
-        {messages.length === 0 && (
-          <div style={{ color: th.dimmed, fontSize: 13, textAlign: "center", padding: 16 }}>
-            No messages yet
-          </div>
+      <div ref={containerRef} style={{ background: th.bg, border: `1px solid ${th.cardBorder}`, borderRadius: 10, padding: 12, maxHeight: 400, overflowY: "auto", marginBottom: 10, minHeight: 80 }}>
+        {topLevel.length === 0 && (
+          <div style={{ color: th.dimmed, fontSize: 13, textAlign: "center", padding: 16 }}>No messages yet</div>
         )}
-        {messages.map((msg) => {
-          const isMe = account && msg.account_id === account.accountId;
-          return (
-            <div key={msg.id} style={{ marginBottom: 6, opacity: msg._optimistic ? 0.6 : 1 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: isMe ? th.accent : th.muted }}>
-                {isMe ? "You" : shortAddr(msg.account_id)}
-              </span>
-              <span style={{ fontSize: 11, color: th.dimmed, marginLeft: 6 }}>
-                {formatTime(msg.created_at)}
-              </span>
-              <div style={{ fontSize: 14, color: th.text, marginTop: 2, wordBreak: "break-word" }}>
-                {msg.message}
+        {topLevel.map((msg) => (
+          <div key={msg.id}>
+            {renderMsg(msg)}
+
+            {/* Кнопка раскрытия треда */}
+            {(msg.reply_count > 0 || expandedThreads[msg.id]) && (
+              <div
+                onClick={() => toggleThread(msg.id)}
+                style={{ fontSize: 12, color: th.accent, cursor: "pointer", marginLeft: 16, marginBottom: 6, opacity: 0.8 }}
+              >
+                {loadingThreads[msg.id] ? "Loading..." : expandedThreads[msg.id]
+                  ? `Hide ${msg.reply_count || 0} ${msg.reply_count === 1 ? "reply" : "replies"}`
+                  : `Show ${msg.reply_count} ${msg.reply_count === 1 ? "reply" : "replies"}`}
               </div>
-            </div>
-          );
-        })}
+            )}
+
+            {/* Развёрнутый тред */}
+            {expandedThreads[msg.id] && expandedThreads[msg.id].map((reply) => renderMsg(reply, true))}
+          </div>
+        ))}
         <div ref={chatEndRef} />
       </div>
 
-      {/* Ввод сообщения */}
+      {/* Индикатор ответа */}
+      {replyTo && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, padding: "4px 8px", background: th.cardBg, borderRadius: 6, fontSize: 12, color: th.dimmed }}>
+          <span>Replying to <b style={{ color: th.text }}>{shortAddr(replyTo.account_id)}</b>: {replyTo.message.slice(0, 40)}{replyTo.message.length > 40 ? "..." : ""}</span>
+          <span onClick={() => setReplyTo(null)} style={{ cursor: "pointer", color: th.muted, fontWeight: 700, marginLeft: "auto" }}>×</span>
+        </div>
+      )}
+
+      {/* Ввод */}
       {account ? (
         <div style={{ display: "flex", gap: 8 }}>
           <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            maxLength={500}
-            style={{
-              flex: 1, padding: "8px 12px", background: th.inputBg,
-              border: `1px solid ${th.inputBorder}`, borderRadius: 8,
-              color: th.text, fontSize: 14, outline: "none",
-            }}
+            ref={inputRef} type="text" value={input}
+            onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
+            placeholder={replyTo ? "Reply..." : "Type a message..."} maxLength={500}
+            style={{ flex: 1, padding: "8px 12px", background: th.inputBg, border: `1px solid ${th.inputBorder}`, borderRadius: 8, color: th.text, fontSize: 14, outline: "none" }}
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            style={{
-              padding: "8px 16px", background: th.accentBg, color: "#fff",
-              border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14,
-              fontWeight: 600, opacity: !input.trim() || sending ? 0.5 : 1,
-            }}
-          >
+          <button onClick={handleSend} disabled={!input.trim() || sending}
+            style={{ padding: "8px 16px", background: th.accentBg, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 600, opacity: !input.trim() || sending ? 0.5 : 1 }}>
             Send
           </button>
         </div>
       ) : (
-        <div style={{ color: th.dimmed, fontSize: 13, textAlign: "center" }}>
-          Connect wallet to chat
-        </div>
+        <div style={{ color: th.dimmed, fontSize: 13, textAlign: "center" }}>Connect wallet to chat</div>
       )}
     </div>
   );

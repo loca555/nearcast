@@ -2,7 +2,7 @@
  * Сервис чата — сообщения привязаны к рынкам
  *
  * SQLite (better-sqlite3), синхронные запросы.
- * Каждый рынок имеет свой чат.
+ * Каждый рынок имеет свой чат с поддержкой тредов (reply_to).
  */
 
 import Database from "better-sqlite3";
@@ -19,43 +19,74 @@ function initDb() {
       market_id INTEGER NOT NULL,
       account_id TEXT NOT NULL,
       message TEXT NOT NULL,
+      reply_to INTEGER DEFAULT NULL,
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_chat_market ON chat_messages(market_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_chat_reply ON chat_messages(reply_to);
   `);
+
+  // Миграция: добавляем reply_to если таблица уже существовала без него
+  try {
+    db.exec("ALTER TABLE chat_messages ADD COLUMN reply_to INTEGER DEFAULT NULL");
+  } catch { /* колонка уже существует */ }
+
   return db;
 }
 
 /**
- * Получить сообщения чата для рынка
- * @param {number} marketId
- * @param {number} limit — максимум сообщений (по умолчанию 50)
- * @param {number} afterId — вернуть только сообщения с id > afterId (для polling)
+ * Получить сообщения чата для рынка (с количеством ответов для каждого)
  */
 export function getMessages(marketId, limit = 50, afterId = 0) {
   const database = initDb();
+
   if (afterId > 0) {
     return database
-      .prepare(
-        "SELECT id, market_id, account_id, message, created_at FROM chat_messages WHERE market_id = ? AND id > ? ORDER BY created_at ASC LIMIT ?"
-      )
+      .prepare(`
+        SELECT m.id, m.market_id, m.account_id, m.message, m.reply_to, m.created_at,
+          (SELECT COUNT(*) FROM chat_messages r WHERE r.reply_to = m.id) as reply_count
+        FROM chat_messages m
+        WHERE m.market_id = ? AND m.id > ?
+        ORDER BY m.created_at ASC LIMIT ?
+      `)
       .all(marketId, afterId, limit);
   }
+
   return database
-    .prepare(
-      "SELECT id, market_id, account_id, message, created_at FROM chat_messages WHERE market_id = ? ORDER BY created_at DESC LIMIT ?"
-    )
+    .prepare(`
+      SELECT m.id, m.market_id, m.account_id, m.message, m.reply_to, m.created_at,
+        (SELECT COUNT(*) FROM chat_messages r WHERE r.reply_to = m.id) as reply_count
+      FROM chat_messages m
+      WHERE m.market_id = ?
+      ORDER BY m.created_at DESC LIMIT ?
+    `)
     .all(marketId, limit)
-    .reverse(); // Последние N, но в хронологическом порядке
+    .reverse();
+}
+
+/**
+ * Получить ответы на конкретное сообщение (тред)
+ */
+export function getReplies(messageId, limit = 50) {
+  const database = initDb();
+  return database
+    .prepare(`
+      SELECT id, market_id, account_id, message, reply_to, created_at
+      FROM chat_messages
+      WHERE reply_to = ?
+      ORDER BY created_at ASC LIMIT ?
+    `)
+    .all(messageId, limit);
 }
 
 /**
  * Добавить сообщение в чат
  * @param {number} marketId
- * @param {string} accountId — NEAR аккаунт отправителя
- * @param {string} message — текст сообщения (max 500 символов)
+ * @param {string} accountId
+ * @param {string} message — max 500 символов
+ * @param {number|null} replyTo — id родительского сообщения (для тредов)
  */
-export function addMessage(marketId, accountId, message) {
+export function addMessage(marketId, accountId, message, replyTo = null) {
   if (!accountId || typeof accountId !== "string") {
     throw new Error("accountId is required");
   }
@@ -68,17 +99,29 @@ export function addMessage(marketId, accountId, message) {
   if (trimmed.length > 500) throw new Error("message too long (max 500 chars)");
 
   const database = initDb();
+
+  // Проверяем что parent существует и принадлежит тому же рынку
+  if (replyTo) {
+    const parent = database
+      .prepare("SELECT id, market_id FROM chat_messages WHERE id = ?")
+      .get(replyTo);
+    if (!parent) throw new Error("parent message not found");
+    if (parent.market_id !== marketId) throw new Error("parent message belongs to another market");
+  }
+
   const result = database
     .prepare(
-      "INSERT INTO chat_messages (market_id, account_id, message) VALUES (?, ?, ?)"
+      "INSERT INTO chat_messages (market_id, account_id, message, reply_to) VALUES (?, ?, ?, ?)"
     )
-    .run(marketId, accountId.trim(), trimmed);
+    .run(marketId, accountId.trim(), trimmed, replyTo || null);
 
   return {
-    id: result.lastInsertRowid,
+    id: Number(result.lastInsertRowid),
     market_id: marketId,
     account_id: accountId.trim(),
     message: trimmed,
+    reply_to: replyTo || null,
+    reply_count: 0,
     created_at: new Date().toISOString().replace("T", " ").slice(0, 19),
   };
 }
