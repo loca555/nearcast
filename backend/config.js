@@ -36,4 +36,10 @@ export default {
     baseUrl: process.env.AI_BASE_URL || "https://api.venice.ai/api/v1",
     model: process.env.AI_MODEL || "claude-sonnet-45",
   },
+
+  // Reclaim Protocol (zkTLS proof'ы)
+  reclaim: {
+    appId: process.env.RECLAIM_APP_ID || "",
+    appSecret: process.env.RECLAIM_APP_SECRET || "",
+  },
 };

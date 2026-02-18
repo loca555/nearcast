@@ -183,4 +183,17 @@ router.post("/trigger-espn-resolution/:id", async (req, res, next) => {
   }
 });
 
+// ── Reclaim zkTLS — альтернативный путь разрешения ──────────────
+
+// Триггер разрешения рынка через Reclaim zkTLS proof
+router.post("/trigger-reclaim-resolution/:id", async (req, res, next) => {
+  try {
+    const { resolveViaReclaim } = await import("../services/reclaim-resolver.js");
+    const result = await resolveViaReclaim(parseInt(req.params.id));
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

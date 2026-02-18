@@ -26,6 +26,11 @@ const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(20);
 /// Минимальный депозит для OutLayer (0.1 NEAR)
 const OUTLAYER_MIN_DEPOSIT: u128 = ONE_NEAR / 10;
 
+/// Gas для вызова Reclaim verify_proof
+const GAS_FOR_RECLAIM_VERIFY: Gas = Gas::from_tgas(100);
+/// Gas для callback on_reclaim_verified
+const GAS_FOR_RECLAIM_CALLBACK: Gas = Gas::from_tgas(30);
+
 // ── Ключи хранилища ─────────────────────────────────────────────
 
 #[derive(BorshStorageKey)]
@@ -76,8 +81,8 @@ pub struct Bet {
     pub claimed: bool,
 }
 
-/// Результат WASM Worker из OutLayer (stdout)
-#[derive(Deserialize)]
+/// Результат WASM Worker из OutLayer (stdout) / Reclaim zkTLS
+#[derive(Serialize, Deserialize)]
 #[serde(crate = "serde")]
 struct OracleResult {
     winning_outcome: i32,
@@ -131,6 +136,50 @@ struct ResolutionCallbackArgs {
     market_id: u64,
 }
 
+// ── Reclaim Protocol zkTLS структуры ────────────────────────────
+
+/// Reclaim zkTLS Proof — для on-chain верификации через reclaim-protocol.testnet
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(crate = "serde")]
+pub struct ReclaimProof {
+    pub claim_info: ClaimInfo,
+    pub signed_claim: SignedClaim,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(crate = "serde")]
+pub struct ClaimInfo {
+    pub provider: String,
+    pub parameters: String,
+    pub context: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(crate = "serde")]
+pub struct SignedClaim {
+    pub claim: ClaimData,
+    pub signatures: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(crate = "serde")]
+pub struct ClaimData {
+    pub identifier: String,
+    pub owner: String,
+    pub epoch: u64,
+    #[serde(rename = "timestampS")]
+    pub timestamp_s: u64,
+}
+
+/// Аргументы для callback on_reclaim_verified
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "serde")]
+struct ReclaimCallbackArgs {
+    market_id: u64,
+    oracle_result: String,
+    proof_context: String,
+}
+
 // ── Контракт ─────────────────────────────────────────────────────
 
 #[near(contract_state)]
@@ -149,6 +198,8 @@ pub struct NearCast {
     outlayer_source_commit: String,
     /// OutLayer контракт (outlayer.testnet или outlayer.near)
     outlayer_contract: AccountId,
+    /// Reclaim Protocol контракт для верификации zkTLS proof'ов
+    reclaim_contract: AccountId,
 }
 
 impl Default for NearCast {
@@ -165,6 +216,7 @@ impl Default for NearCast {
             outlayer_source_repo: String::new(),
             outlayer_source_commit: "main".to_string(),
             outlayer_contract: "outlayer.testnet".parse().unwrap(),
+            reclaim_contract: "reclaim-protocol.testnet".parse().unwrap(),
         }
     }
 }
@@ -187,6 +239,7 @@ impl NearCast {
             outlayer_source_repo: String::new(),
             outlayer_source_commit: "main".to_string(),
             outlayer_contract: "outlayer.testnet".parse().unwrap(),
+            reclaim_contract: "reclaim-protocol.testnet".parse().unwrap(),
         }
     }
 
@@ -570,6 +623,157 @@ impl NearCast {
     }
 
     // ══════════════════════════════════════════════════════════════
+    // RECLAIM zkTLS — альтернативное разрешение через zkFetch proof
+    //
+    // Бэкенд генерирует zkFetch proof ESPN API, вычисляет winning_outcome,
+    // и отправляет proof + oracle_result в контракт.
+    // Контракт верифицирует proof через reclaim-protocol.testnet,
+    // затем применяет результат через apply_resolution.
+    // ══════════════════════════════════════════════════════════════
+
+    /// Разрешение рынка через Reclaim zkTLS proof
+    pub fn resolve_with_reclaim_proof(
+        &mut self,
+        market_id: u64,
+        proof: ReclaimProof,
+        oracle_result: String,
+    ) -> Promise {
+        let market = self
+            .markets
+            .get(&market_id)
+            .expect("Рынок не найден")
+            .clone();
+        assert!(
+            !market.espn_event_id.is_empty(),
+            "Рынок не спортивный (нет espn_event_id)"
+        );
+        assert!(
+            market.status == "active" || market.status == "closed",
+            "Рынок уже разрешён или аннулирован"
+        );
+
+        let now = env::block_timestamp();
+        assert!(
+            now >= market.resolution_date,
+            "Время разрешения ещё не наступило"
+        );
+
+        // Проверяем что proof относится к нужному ESPN событию
+        assert!(
+            proof.claim_info.parameters.contains(&market.espn_event_id),
+            "Proof не относится к данному ESPN событию"
+        );
+
+        let callback_args = ReclaimCallbackArgs {
+            market_id,
+            oracle_result,
+            proof_context: proof.claim_info.context.clone(),
+        };
+
+        log!(
+            "Reclaim zkTLS: запрос верификации для рынка #{} (ESPN: {})",
+            market_id,
+            market.espn_event_id
+        );
+
+        // Cross-contract call: reclaim-protocol.testnet → verify_proof → callback
+        Promise::new(self.reclaim_contract.clone())
+            .function_call(
+                "verify_proof".to_string(),
+                serde_json::to_vec(&serde_json::json!({ "proof": proof })).unwrap(),
+                NearToken::from_yoctonear(0),
+                GAS_FOR_RECLAIM_VERIFY,
+            )
+            .then(
+                Promise::new(env::current_account_id()).function_call(
+                    "on_reclaim_verified".to_string(),
+                    serde_json::to_vec(&callback_args).unwrap(),
+                    NearToken::from_yoctonear(0),
+                    GAS_FOR_RECLAIM_CALLBACK,
+                ),
+            )
+    }
+
+    /// Callback после верификации Reclaim proof
+    #[private]
+    pub fn on_reclaim_verified(
+        &mut self,
+        market_id: u64,
+        oracle_result: String,
+        proof_context: String,
+    ) -> String {
+        assert_eq!(
+            env::promise_results_count(),
+            1,
+            "Ожидается один результат"
+        );
+
+        let result = env::promise_result_checked(0, 1_000_000);
+        match result {
+            Ok(_) => {
+                // Proof верифицирован on-chain — парсим OracleResult
+                match serde_json::from_str::<OracleResult>(&oracle_result) {
+                    Ok(parsed_result) => {
+                        // Cross-check: счёт из proof context должен совпадать
+                        if let Ok(ctx) = serde_json::from_str::<serde_json::Value>(&proof_context)
+                        {
+                            if let Some(extracted) = ctx.get("extractedParameters") {
+                                if let (Some(home), Some(away)) = (
+                                    extracted
+                                        .get("home_score")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| s.parse::<i32>().ok()),
+                                    extracted
+                                        .get("away_score")
+                                        .and_then(|v| v.as_str())
+                                        .and_then(|s| s.parse::<i32>().ok()),
+                                ) {
+                                    assert!(
+                                        home == parsed_result.home_score
+                                            && away == parsed_result.away_score,
+                                        "Счёт из proof не совпадает с oracle_result"
+                                    );
+                                }
+                            }
+                        }
+
+                        self.apply_resolution(market_id, &parsed_result);
+                        log!(
+                            "Reclaim zkTLS: рынок #{} — исход={}, счёт={}:{}, {}",
+                            market_id,
+                            parsed_result.winning_outcome,
+                            parsed_result.home_score,
+                            parsed_result.away_score,
+                            parsed_result.reasoning
+                        );
+                        format!(
+                            "Resolved via zkTLS: outcome={}, score={}:{}",
+                            parsed_result.winning_outcome,
+                            parsed_result.home_score,
+                            parsed_result.away_score
+                        )
+                    }
+                    Err(e) => {
+                        log!(
+                            "Reclaim: ошибка парсинга OracleResult для рынка #{}: {}",
+                            market_id,
+                            e
+                        );
+                        format!("Parse error: {}", e)
+                    }
+                }
+            }
+            Err(_) => {
+                log!(
+                    "Reclaim: верификация proof не удалась для рынка #{}",
+                    market_id
+                );
+                "Reclaim proof verification failed".to_string()
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // ПОЛУЧЕНИЕ ВЫИГРЫША / ВОЗВРАТ
     // ══════════════════════════════════════════════════════════════
 
@@ -660,6 +864,16 @@ impl NearCast {
     // ══════════════════════════════════════════════════════════════
     // АДМИНИСТРАТИВНЫЕ МЕТОДЫ
     // ══════════════════════════════════════════════════════════════
+
+    /// Настройка Reclaim Protocol контракта
+    pub fn set_reclaim_config(&mut self, reclaim_contract: AccountId) {
+        assert!(
+            env::predecessor_account_id() == self.owner,
+            "Только владелец"
+        );
+        self.reclaim_contract = reclaim_contract.clone();
+        log!("Reclaim настроен: contract={}", reclaim_contract);
+    }
 
     /// Настройка OutLayer — GitHub repo с WASM Worker
     pub fn set_outlayer_config(
@@ -792,6 +1006,7 @@ impl NearCast {
             "oracle": self.oracle,
             "outlayerSourceRepo": self.outlayer_source_repo,
             "outlayerContract": self.outlayer_contract,
+            "reclaimContract": self.reclaim_contract,
         })
     }
 

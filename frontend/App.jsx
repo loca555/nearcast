@@ -19,47 +19,6 @@ import "@near-wallet-selector/modal-ui/styles.css";
 // ══════════════════════════════════════════════════════════════
 
 const TRANSLATIONS = {
-  ru: {
-    nav: { markets: "Рынки", create: "+ Создать", resolved: "Завершённые", portfolio: "Портфель", connect: "Подключить" },
-    status: { active: "Активный", closed: "In-play", resolved: "Resolved", voided: "Аннулирован", resolvedWon: (w) => `Resolved: ${w} won` },
-    stats: { markets: "Рынков", volume: "Объём (NEAR)" },
-    filters: { all: "Все", active: "Активный", inPlay: "In-play", resolved: "Resolved", voided: "Аннулированные" },
-    sort: { label: "Сортировка", endDate: "Дата окончания", volume: "Объём", newest: "Новые" },
-    market: {
-      pool: "Пул", bets: "Ставок", outcomes: "Исходов", until: "До", resolution: "Resolution",
-      noMarkets: "Рынков пока нет. Создайте первый!", backToMarkets: "← Назад к рынкам",
-      outcomesTitle: "Исходы", available: "Доступно", amountNear: "Сумма NEAR",
-      placeBet: "Поставить", selectOutcome: "Выберите исход", minBet: "Минимум 0.1 NEAR",
-      betAccepted: "Ставка принята!", claimWinnings: "Забрать выигрыш", claimRefund: "Забрать возврат",
-      winningsDeposited: "Средства зачислены!", refundDeposited: "Возврат зачислен!",
-    },
-    balance: {
-      title: "Баланс на платформе", deposit: "Пополнить", withdraw: "Вывести", cancel: "Отмена",
-      depositPlaceholder: "Сумма NEAR для пополнения", withdrawPlaceholder: "Сумма NEAR для вывода",
-      depositDone: "Депозит выполнен!", withdrawDone: "Вывод выполнен!", invalidAmount: "Введите корректную сумму",
-    },
-    create: {
-      title: "Создать рынок", steps: ["Лига", "Матч", "Тип рынка", "Подтверждение"],
-      sport: "Спорт *", country: "Страна / Регион *", league: "Лига / Турнир *", select: "— Выберите —",
-      showMatches: "Показать ближайшие матчи", loadingSchedule: "Загрузка расписания...",
-      selectLeague: "Выберите лигу", upcomingMatches: "Ближайшие матчи", back: "Назад",
-      noMatches: "Матчей не найдено", selectMatch: "Выбрать матч",
-      selectMarketType: "Выберите тип рынка:", aiGenerating: "AI генерирует рынок...",
-      createMarket: "Создать рынок", outcomeOptions: "Варианты исходов:",
-      betsUntil: "Ставки до:", resolution: "Resolution:",
-      confirmCreate: "Подтвердить и создать", creating: "Создание...", marketCreated: "Рынок создан!",
-    },
-    resolved: { title: "Завершённые рынки", noResolved: "Завершённых рынков пока нет" },
-    portfolio: {
-      title: "Мой портфель", refresh: "Обновить", balanceNear: "Баланс (NEAR)",
-      bets: "Ставок", markets: "Рынков", totalBet: "Поставлено (NEAR)",
-      noBets: "У вас пока нет ставок", outcome: "Исход",
-      claimed: "✓ Получено", pending: "Ожидание",
-      connectWallet: "Подключите кошелёк", connectNearWallet: "Подключить NEAR кошелёк",
-      claimAll: "Забрать все выигрыши", claimingAll: "Забираю...", allClaimed: "Все выигрыши получены!",
-    },
-    loading: "Загрузка...", error: "Ошибка",
-  },
   en: {
     nav: { markets: "Markets", create: "+ Create", resolved: "Resolved", portfolio: "Portfolio", connect: "Connect" },
     status: { active: "Active", closed: "In-play", resolved: "Resolved", voided: "Voided", resolvedWon: (w) => `Resolved: ${w} won` },
@@ -222,9 +181,9 @@ const CATEGORY_LABELS = {
   "tennis": { ru: "Теннис", en: "Tennis" },
   "racing": { ru: "Автоспорт", en: "Motorsport" },
 };
-const categoryLabel = (cat, lang) => {
+const categoryLabel = (cat) => {
   const labels = CATEGORY_LABELS[cat];
-  return labels ? (lang === "en" ? labels.en : labels.ru) : cat;
+  return labels ? labels.en : cat;
 };
 
 function useIsMobile(breakpoint = 768) {
@@ -263,18 +222,16 @@ export default function App() {
   const [nearConfig, setNearConfig] = useState(null);
   const [balance, setBalance] = useState("0");
 
-  // Язык и тема — сохраняем в localStorage
-  const [lang, setLang] = useState(() => localStorage.getItem("nc-lang") || "ru");
+  // Тема — сохраняем в localStorage
+  const lang = "en";
   const [theme, setTheme] = useState(() => localStorage.getItem("nc-theme") || "dark");
 
-  const t = TRANSLATIONS[lang];
+  const t = TRANSLATIONS.en;
   const th = THEMES[theme];
   const S = getStyles(th);
-  useEffect(() => { localStorage.setItem("nc-lang", lang); }, [lang]);
   useEffect(() => { localStorage.setItem("nc-theme", theme); document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  const toggleLang = () => setLang((prev) => (prev === "ru" ? "en" : "ru"));
 
   // ── Инициализация ───────────────────────────────────────────
 
@@ -366,28 +323,23 @@ export default function App() {
       <div style={S.body}>
         {/* Шапка */}
         <header style={{ ...S.header, ...(mob ? { flexDirection: "column", gap: 12, padding: "12px 16px" } : {}) }}>
-          <div style={S.logo}>◈ NearCast</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={S.logo}>◈ NearCast</div>
+            <a href="https://github.com/loca555/nearcast" target="_blank" rel="noopener noreferrer"
+              style={{ ...S.iconBtn, textDecoration: "none" }} title="GitHub">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            </a>
+          </div>
           <nav style={{ ...S.nav, ...(mob ? { flexWrap: "wrap", justifyContent: "center", gap: 8 } : {}) }}>
             <button style={S.navBtn(page === "markets")} onClick={() => setPage("markets")}>{t.nav.markets}</button>
             <button style={S.navBtn(page === "create")} onClick={() => setPage("create")}>{t.nav.create}</button>
             <button style={S.navBtn(page === "resolved")} onClick={() => setPage("resolved")}>{t.nav.resolved}</button>
             <button style={S.navBtn(page === "portfolio")} onClick={() => setPage("portfolio")}>{t.nav.portfolio}</button>
 
-            {/* Переключатель темы */}
+            {/* Theme toggle */}
             <button style={S.iconBtn} onClick={toggleTheme} title={theme === "dark" ? "Light mode" : "Dark mode"}>
               {theme === "dark" ? "\u2600" : "\u263D"}
             </button>
-
-            {/* Переключатель языка */}
-            <button style={S.iconBtn} onClick={toggleLang} title={lang === "ru" ? "English" : "Русский"}>
-              {lang === "ru" ? "EN" : "RU"}
-            </button>
-
-            {/* Ссылка на GitHub */}
-            <a href="https://github.com/loca555/nearcast" target="_blank" rel="noopener noreferrer"
-              style={{ ...S.iconBtn, textDecoration: "none" }} title="GitHub">
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-            </a>
 
             {account ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
@@ -563,7 +515,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <button style={S.filterBtn(sportFilter === "all")} onClick={() => setSportFilter("all")}>{t.filters.all}</button>
             {categories.map((cat) => (
-              <button key={cat} style={S.filterBtn(sportFilter === cat)} onClick={() => setSportFilter(cat)}>{categoryLabel(cat, lang)}</button>
+              <button key={cat} style={S.filterBtn(sportFilter === cat)} onClick={() => setSportFilter(cat)}>{categoryLabel(cat)}</button>
             ))}
           </div>
         )}
@@ -579,7 +531,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
-              <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
+              <span style={S.badge("#94a3b8")}>{categoryLabel(m.category)}</span>
               {m.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
             </div>
           </div>
@@ -643,7 +595,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
       <div style={{ ...S.card, cursor: "default" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <span style={S.badge(STATUS_COLORS[market.status])}>{getStatusLabel(market, t)}</span>
-          <span style={S.badge("#94a3b8")}>{categoryLabel(market.category, lang)}</span>
+          <span style={S.badge("#94a3b8")}>{categoryLabel(market.category)}</span>
           {market.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
         </div>
         <h2 style={{ margin: "0 0 8px", fontSize: 22 }}>{market.question}</h2>
@@ -703,20 +655,17 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
           </div>
         )}
 
-        {/* Кнопка Resolve via ESPN — для закрытых спортивных рынков после resolutionDate */}
+        {/* Кнопки Resolution — для закрытых спортивных рынков после resolutionDate */}
         {market.espnEventId && (market.status === "closed" || market.status === "active") && Date.now() >= Number(BigInt(market.resolutionDate || 0) / BigInt(1_000_000)) && (
-          <div style={{ marginTop: 20, padding: "16px", borderRadius: 10, background: `${th.successBg}`, border: `1px solid ${th.successText}33` }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: th.successText, marginBottom: 4 }}>
-                  ESPN Oracle — Permissionless Resolution
-                </div>
-                <div style={{ fontSize: 12, color: th.muted }}>
-                  {lang === "ru"
-                    ? "Кто угодно может запустить разрешение рынка через ESPN API"
-                    : "Anyone can trigger market resolution via ESPN API"}
-                </div>
-              </div>
+          <div style={{ marginTop: 20, padding: "16px", borderRadius: 10, background: `${th.cardBg}`, border: `1px solid ${th.cardBorder}` }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: th.text, marginBottom: 4 }}>
+              Permissionless Resolution
+            </div>
+            <div style={{ fontSize: 12, color: th.muted, marginBottom: 12 }}>
+              Anyone can trigger market resolution via ESPN API
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {/* Кнопка OutLayer TEE */}
               <button
                 style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1 }}
                 disabled={resolving}
@@ -724,15 +673,32 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
                   setResolving(true); setMessage("");
                   try {
                     await requestResolution(market.id);
-                    setMessage(lang === "ru" ? "Запрос на разрешение отправлен через OutLayer TEE" : "Resolution request sent via OutLayer TEE");
+                    setMessage("Resolution request sent via OutLayer TEE");
                     setTimeout(onRefresh, 5000);
                   } catch (err) { setMessage(`${t.error}: ${err.message}`); }
                   setResolving(false);
                 }}
               >
-                {resolving
-                  ? "..."
-                  : lang === "ru" ? "Resolve via ESPN" : "Resolve via ESPN"}
+                {resolving ? "..." : "Resolve via OutLayer"}
+              </button>
+
+              {/* Кнопка Reclaim zkTLS */}
+              <button
+                style={{ ...S.primaryBtn, background: "#6366f1", opacity: resolving ? 0.5 : 1 }}
+                disabled={resolving}
+                onClick={async () => {
+                  setResolving(true); setMessage("");
+                  try {
+                    const res = await fetch(`/api/trigger-reclaim-resolution/${market.id}`, { method: "POST" });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                    setMessage("Resolution request sent via zkTLS proof");
+                    setTimeout(onRefresh, 5000);
+                  } catch (err) { setMessage(`${t.error}: ${err.message}`); }
+                  setResolving(false);
+                }}
+              >
+                {resolving ? "..." : "Resolve via zkTLS"}
               </button>
             </div>
           </div>
@@ -1045,7 +1011,7 @@ function ResolvedMarkets({ onOpen }) {
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                   <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
-                  <span style={S.badge("#94a3b8")}>{categoryLabel(m.category, lang)}</span>
+                  <span style={S.badge("#94a3b8")}>{categoryLabel(m.category)}</span>
                   {m.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
                 </div>
               </div>

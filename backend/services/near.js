@@ -143,3 +143,25 @@ export async function requestResolution(marketId) {
   console.log(`[near] OutLayer resolution для #${marketId}. TX: ${txHash}`);
   return txHash;
 }
+
+// ── Reclaim zkTLS — разрешение через zkFetch proof ──────────────
+
+export async function requestReclaimResolution(marketId, proof, oracleResult) {
+  const account = await initOracleAccount();
+
+  const result = await account.functionCall({
+    contractId: config.near.contractId,
+    methodName: "resolve_with_reclaim_proof",
+    args: {
+      market_id: marketId,
+      proof,
+      oracle_result: JSON.stringify(oracleResult),
+    },
+    gas: "300000000000000", // 300 TGas (verify + callback)
+    attachedDeposit: "0", // Без депозита
+  });
+
+  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
+  console.log(`[near] Reclaim resolution для #${marketId}. TX: ${txHash}`);
+  return txHash;
+}
