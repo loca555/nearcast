@@ -74,6 +74,38 @@ router.get("/markets/:id/bets", async (req, res, next) => {
   }
 });
 
+// ── Чат рынка ─────────────────────────────────────────────────
+
+import { getMessages, addMessage } from "../services/chat.js";
+
+// Сообщения чата рынка
+router.get("/markets/:id/chat", (req, res, next) => {
+  try {
+    const marketId = parseInt(req.params.id);
+    const limit = parseInt(req.query.limit) || 50;
+    const afterId = parseInt(req.query.after) || 0;
+    const messages = getMessages(marketId, limit, afterId);
+    res.json(messages);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Отправка сообщения в чат
+router.post("/markets/:id/chat", (req, res, next) => {
+  try {
+    const marketId = parseInt(req.params.id);
+    const { accountId, message } = req.body;
+    const result = addMessage(marketId, accountId, message);
+    res.json(result);
+  } catch (err) {
+    if (err.message.includes("required") || err.message.includes("empty") || err.message.includes("too long")) {
+      return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
 // ── Пользователь ──────────────────────────────────────────────
 
 // Ставки пользователя

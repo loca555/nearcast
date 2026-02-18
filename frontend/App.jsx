@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useContext, createContext } from "react";
+import React, { useState, useEffect, useCallback, useRef, useContext, createContext } from "react";
 import {
   initWalletSelector,
   getAccount,
@@ -709,8 +709,201 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
             {message}
           </div>
         )}
+
+        {/* Чат рынка */}
+        <MarketChat marketId={market.id} account={account} />
       </div>
     </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// ЧАТ РЫНКА
+// ══════════════════════════════════════════════════════════════
+
+function MarketChat({ marketId, account }) {
+  const { th } = useApp();
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const lastIdRef = useRef(0);
+  const chatEndRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // Усечение account_id: first8...last4
+  const shortAddr = (addr) => {
+    if (!addr) return "???";
+    if (addr.length <= 16) return addr;
+    return addr.slice(0, 8) + "..." + addr.slice(-4);
+  };
+
+  // Время из ISO строки
+  const formatTime = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso.includes("Z") ? iso : iso + "Z");
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
+
+  // Загрузка сообщений
+  const fetchMessages = useCallback(async (initial = false) => {
+    try {
+      const url = initial
+        ? `/api/markets/${marketId}/chat?limit=50`
+        : `/api/markets/${marketId}/chat?after=${lastIdRef.current}`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.length === 0) return;
+
+      if (initial) {
+        setMessages(data);
+        if (data.length > 0) lastIdRef.current = data[data.length - 1].id;
+      } else {
+        // Добавляем только новые (для polling)
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const newMsgs = data.filter((m) => !existingIds.has(m.id));
+          if (newMsgs.length === 0) return prev;
+          const updated = [...prev, ...newMsgs];
+          lastIdRef.current = updated[updated.length - 1].id;
+          return updated;
+        });
+      }
+    } catch { /* polling ошибки не критичны */ }
+  }, [marketId]);
+
+  // Начальная загрузка + polling
+  useEffect(() => {
+    fetchMessages(true);
+    const interval = setInterval(() => fetchMessages(false), 3000);
+    return () => clearInterval(interval);
+  }, [fetchMessages]);
+
+  // Auto-scroll при новых сообщениях
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+
+  // Отправка сообщения
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || !account || sending) return;
+
+    setSending(true);
+    setInput("");
+
+    // Optimistic update — сообщение появляется мгновенно
+    const optimistic = {
+      id: Date.now(), // временный id
+      market_id: marketId,
+      account_id: account.accountId,
+      message: text,
+      created_at: new Date().toISOString(),
+      _optimistic: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+
+    try {
+      const res = await fetch(`/api/markets/${marketId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId: account.accountId, message: text }),
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        // Заменяем optimistic на реальное
+        setMessages((prev) =>
+          prev.map((m) => (m._optimistic && m.id === optimistic.id ? saved : m))
+        );
+        lastIdRef.current = Math.max(lastIdRef.current, saved.id);
+      }
+    } catch { /* ошибка — optimistic сообщение останется */ }
+
+    setSending(false);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: th.text, marginBottom: 10 }}>
+        Chat
+      </div>
+
+      {/* Список сообщений */}
+      <div
+        ref={containerRef}
+        style={{
+          background: th.bg, border: `1px solid ${th.cardBorder}`, borderRadius: 10,
+          padding: 12, maxHeight: 300, overflowY: "auto", marginBottom: 10,
+          minHeight: 80,
+        }}
+      >
+        {messages.length === 0 && (
+          <div style={{ color: th.dimmed, fontSize: 13, textAlign: "center", padding: 16 }}>
+            No messages yet
+          </div>
+        )}
+        {messages.map((msg) => {
+          const isMe = account && msg.account_id === account.accountId;
+          return (
+            <div key={msg.id} style={{ marginBottom: 6, opacity: msg._optimistic ? 0.6 : 1 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: isMe ? th.accent : th.muted }}>
+                {isMe ? "You" : shortAddr(msg.account_id)}
+              </span>
+              <span style={{ fontSize: 11, color: th.dimmed, marginLeft: 6 }}>
+                {formatTime(msg.created_at)}
+              </span>
+              <div style={{ fontSize: 14, color: th.text, marginTop: 2, wordBreak: "break-word" }}>
+                {msg.message}
+              </div>
+            </div>
+          );
+        })}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* Ввод сообщения */}
+      {account ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type a message..."
+            maxLength={500}
+            style={{
+              flex: 1, padding: "8px 12px", background: th.inputBg,
+              border: `1px solid ${th.inputBorder}`, borderRadius: 8,
+              color: th.text, fontSize: 14, outline: "none",
+            }}
+          />
+          <button
+            onClick={handleSend}
+            disabled={!input.trim() || sending}
+            style={{
+              padding: "8px 16px", background: th.accentBg, color: "#fff",
+              border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14,
+              fontWeight: 600, opacity: !input.trim() || sending ? 0.5 : 1,
+            }}
+          >
+            Send
+          </button>
+        </div>
+      ) : (
+        <div style={{ color: th.dimmed, fontSize: 13, textAlign: "center" }}>
+          Connect wallet to chat
+        </div>
+      )}
+    </div>
   );
 }
 
