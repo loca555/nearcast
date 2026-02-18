@@ -11,12 +11,16 @@
     <style>
       *, *::before, *::after { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; }
-      /* Скроллбар под тёмную тему */
-      html { scrollbar-color: #334155 #0a0e1a; }
+      /* Скроллбар — адаптивный под тему */
       ::-webkit-scrollbar { width: 8px; }
-      ::-webkit-scrollbar-track { background: #0a0e1a; }
-      ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-      ::-webkit-scrollbar-thumb:hover { background: #475569; }
+      html[data-theme="dark"] { scrollbar-color: #334155 #0a0e1a; }
+      html[data-theme="dark"] ::-webkit-scrollbar-track { background: #0a0e1a; }
+      html[data-theme="dark"] ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+      html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: #475569; }
+      html[data-theme="light"] { scrollbar-color: #cbd5e1 #f8fafc; }
+      html[data-theme="light"] ::-webkit-scrollbar-track { background: #f8fafc; }
+      html[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+      html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
   </head>
   <body>

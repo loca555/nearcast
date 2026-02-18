@@ -271,7 +271,7 @@ export default function App() {
   const th = THEMES[theme];
   const S = getStyles(th);
   useEffect(() => { localStorage.setItem("nc-lang", lang); }, [lang]);
-  useEffect(() => { localStorage.setItem("nc-theme", theme); }, [theme]);
+  useEffect(() => { localStorage.setItem("nc-theme", theme); document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
   const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   const toggleLang = () => setLang((prev) => (prev === "ru" ? "en" : "ru"));
