@@ -35,7 +35,7 @@ If multiple resolutions are submitted, the first valid resolution is considered 
 
 There's couple technological challenges with the design:
 - A lot data is generated, all this data need to be accessible for anyone. For this eg, [IPFS](https://ipfs.tech/) or Ethereum Blob storage might be used. Other approach is to try to limit the payload size coming from webpages
-- The websites need to sign the data they provide. Currently it seems like no websites are doing this, even thought there could be protocols that achieve this (eg, OAuth and [JWT](https://www.jwt.io/)). [TLS-notary](https://tlsnotary.org/) or [DECO](https://www.deco.works/) sound like reasonable options, but they require interactive multiparty computation.
+- The websites need to sign the data they provide. Currently it seems like no websites are doing this, even thought there could be protocols that achieve this (eg, OAuth and [JWT](https://www.jwt.io/)). [RFC 9421 — HTTP Message Signatures](https://www.rfc-editor.org/rfc/rfc9421.html) defines a standard for signing HTTP responses with detached signatures, which would solve this natively if adopted by data providers. Until then, [TLS-notary](https://tlsnotary.org/) or [DECO](https://www.deco.works/) sound like reasonable options, but they require interactive multiparty computation.
 - The Large Language Model needs to be deterministic
 - We need to be able to prove Large Language Model execution. Here [Cartesi](https://cartesi.io/) could work. Proving execution with ZK could be nice, but technically too hard.
 - The model can hallucinate. This probability should be minimized
