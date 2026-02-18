@@ -23,7 +23,7 @@ const TRANSLATIONS = {
     nav: { markets: "Markets", create: "+ Create", resolved: "Resolved", portfolio: "Portfolio", connect: "Connect" },
     status: { active: "Active", closed: "In-play", resolved: "Resolved", voided: "Voided", resolvedWon: (w) => `Resolved: ${w} won` },
     stats: { markets: "Markets", volume: "Volume (NEAR)" },
-    filters: { all: "All", active: "Active", inPlay: "In-play", resolved: "Resolved", voided: "Voided" },
+    filters: { all: "All", active: "Active", inPlay: "In-play", needsResolution: "Needs Resolution", resolved: "Resolved", voided: "Voided" },
     sort: { label: "Sort", endDate: "End Date", volume: "Volume", newest: "Newest" },
     market: {
       pool: "Pool", bets: "Bets", outcomes: "Outcomes", until: "Until", resolution: "Resolution",
@@ -170,6 +170,14 @@ function getStatusLabel(market, t) {
 
 const isErrorMsg = (msg) => msg && (msg.includes("Ошибка") || msg.includes("Error"));
 
+/** Рынок готов к резолвингу: closed/active + resolutionDate прошла + есть ESPN Oracle */
+const isReadyToResolve = (m) => {
+  if (!m || !m.resolutionDate || m.resolutionDate === "0") return false;
+  if (m.status !== "closed" && m.status !== "active") return false;
+  const resMs = Number(BigInt(m.resolutionDate) / BigInt(1_000_000));
+  return Date.now() >= resMs;
+};
+
 const CATEGORY_LABELS = {
   "спорт": { ru: "Спорт", en: "Sports" },
   "football": { ru: "Футбол", en: "Football" },
@@ -260,7 +268,8 @@ export default function App() {
     try {
       const params = new URLSearchParams();
       params.set("limit", "100000");
-      if (statusFilter !== "all") params.set("status", statusFilter);
+      // needsResolution — клиентский фильтр, загружаем все рынки
+      if (statusFilter !== "all" && statusFilter !== "needsResolution") params.set("status", statusFilter);
       if (categoryFilter !== "all") params.set("category", categoryFilter);
       const res = await fetch(`/api/markets?${params}`);
       const data = await res.json();
@@ -478,8 +487,11 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
     return b.id - a.id;
   });
 
+  // Фильтрация по needsResolution (клиентская)
+  const statusFiltered = statusFilter === "needsResolution" ? sorted.filter(isReadyToResolve) : sorted;
+
   // Фильтрация по категории
-  const filtered = sportFilter === "all" ? sorted : sorted.filter((m) => m.category === sportFilter);
+  const filtered = sportFilter === "all" ? statusFiltered : statusFiltered.filter((m) => m.category === sportFilter);
 
   return (
     <>
@@ -498,9 +510,14 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
 
       {/* Статус-фильтры */}
       <div style={S.filters}>
-        {[["all", t.filters.all], ["active", t.filters.active], ["closed", t.filters.inPlay]].map(([s, label]) => (
-          <button key={s} style={S.filterBtn(statusFilter === s)} onClick={() => setStatusFilter(s)}>{label}</button>
-        ))}
+        {[["all", t.filters.all], ["active", t.filters.active], ["closed", t.filters.inPlay], ["needsResolution", t.filters.needsResolution]].map(([s, label]) => {
+          const count = s === "needsResolution" ? markets.filter(isReadyToResolve).length : 0;
+          return (
+            <button key={s} style={S.filterBtn(statusFilter === s)} onClick={() => setStatusFilter(s)}>
+              {label}{s === "needsResolution" && count > 0 ? ` (${count})` : ""}
+            </button>
+          );
+        })}
       </div>
 
       {/* Сортировка + фильтр по категории */}
@@ -533,6 +550,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
               <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
               <span style={S.badge("#94a3b8")}>{categoryLabel(m.category)}</span>
               {m.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
+              {isReadyToResolve(m) && <span style={{ ...S.badge("#f59e0b"), fontWeight: 700, animation: "pulse 2s infinite" }}>Resolve!</span>}
             </div>
           </div>
           <div style={S.cardTitle}>{m.question}</div>
