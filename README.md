@@ -305,6 +305,10 @@ Creates markets from real ESPN schedule (7 days ahead).
 | OutLayer | `outlayer.testnet` | Verifiable off-chain compute (Intel TDX) |
 | Reclaim Protocol | `reclaim-protocol.testnet` | On-chain ZK proof verification |
 
+## Research
+
+- [LLM Oracle With Data Provenance](docs/llm-oracle-provenance.md) — theoretical protocol for resolving prediction markets using deterministic LLMs with cryptographic data provenance (TLS-notary, DECO, ZK proofs)
+
 ## License
 
 MIT
