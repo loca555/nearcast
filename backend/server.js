@@ -102,12 +102,9 @@ app.listen(config.port, () => {
   // разрешение рынков через OutLayer TEE в UI
   console.log("[outlayer] Авторезолвинг отключён — пользователи тригерят TEE в UI");
 
-  // TLS Oracle Relayer (альтернативный путь через MPC-TLS + ZK)
-  if (config.tlsOracle.apiKey && config.near.contractId) {
-    startTlsRelayer();
-  } else {
-    console.log("[tls-relayer] Не запущен — проверьте TLS_ORACLE_API_KEY");
-  }
+  // TLS Oracle Relayer — автозапуск отключён, пользователь сам выбирает
+  // способ резолвинга (TEE или TLS) через UI
+  console.log("[tls-relayer] Авторезолвинг отключён — пользователи выбирают TEE или TLS в UI");
 
   // Keep-alive: Render free tier убивает процесс при засыпании,
   // поэтому self-ping не работает. Используйте внешний cron-сервис
