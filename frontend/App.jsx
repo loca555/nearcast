@@ -231,6 +231,9 @@ export default function App() {
   const [stats, setStats] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
+  const [sportFilter, setSportFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [nearConfig, setNearConfig] = useState(null);
   const [balance, setBalance] = useState("0");
 
@@ -384,6 +387,9 @@ export default function App() {
             <MarketBrowser
               markets={markets} stats={stats}
               statusFilter={statusFilter} setStatusFilter={setStatusFilter}
+              sortBy={sortBy} setSortBy={setSortBy}
+              sportFilter={sportFilter} setSportFilter={setSportFilter}
+              searchQuery={searchQuery} setSearchQuery={setSearchQuery}
               onOpen={openMarket}
             />
           )}
@@ -479,11 +485,8 @@ function BalancePanel({ balance, onUpdate }) {
 // СПИСОК РЫНКОВ
 // ══════════════════════════════════════════════════════════════
 
-function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }) {
+function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, sortBy, setSortBy, sportFilter, setSportFilter, searchQuery, setSearchQuery, onOpen }) {
   const { t, th, S, lang, mob } = useApp();
-  const [sortBy, setSortBy] = useState("newest");
-  const [sportFilter, setSportFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
 
   // Извлекаем уникальные категории для фильтра
   const categories = [...new Set(markets.map((m) => m.category).filter(Boolean))];

@@ -126,6 +126,66 @@ export async function getBalance(accountId) {
   return (await viewContract("get_balance", { account_id: accountId })) || "0";
 }
 
+// ── Создание рынка (через оракул-аккаунт) ────────────────────────
+
+export async function createMarket({
+  question,
+  description,
+  outcomes,
+  category,
+  betsEndDate,
+  resolutionDate,
+  espnEventId,
+  sport,
+  league,
+  marketType,
+}) {
+  const account = await initOracleAccount();
+
+  const result = await account.functionCall({
+    contractId: config.near.contractId,
+    methodName: "create_market",
+    args: {
+      question,
+      description,
+      outcomes,
+      category: category || "sports",
+      bets_end_date: betsEndDate,
+      resolution_date: resolutionDate,
+      espn_event_id: espnEventId || null,
+      sport: sport || null,
+      league: league || null,
+      market_type: marketType || "winner",
+    },
+    gas: "30000000000000", // 30 TGas
+    attachedDeposit: "0",
+  });
+
+  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
+
+  // Извлекаем market_id из return value
+  const returnVal = result.status?.SuccessValue;
+  let marketId = null;
+  if (returnVal) {
+    try {
+      marketId = JSON.parse(Buffer.from(returnVal, "base64").toString());
+    } catch {}
+  }
+
+  // Пробуем из логов
+  if (marketId == null) {
+    const logs =
+      result.receipts_outcome
+        ?.flatMap((r) => r.outcome?.logs || [])
+        .join("\n") || "";
+    const idMatch = logs.match(/market.*?#?(\d+)/i);
+    if (idMatch) marketId = parseInt(idMatch[1]);
+  }
+
+  console.log(`[near] Рынок создан: #${marketId}. TX: ${txHash}`);
+  return { marketId, txHash };
+}
+
 // ── Seed Liquidity — авто-ставки на все исходы нового рынка ───────
 
 const BET_AMOUNT = "1000000000000000000000000"; // 1 NEAR
