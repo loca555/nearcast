@@ -1358,10 +1358,22 @@ function ResolvedMarkets({ onOpen }) {
 // ПОРТФЕЛЬ
 // ══════════════════════════════════════════════════════════════
 
-function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarket }) {
+function Portfolio({ account, userBets, markets: externalMarkets, balance, onRefresh, onOpenMarket }) {
   const { t, th, S, mob } = useApp();
   const [claimingAll, setClaimingAll] = useState(false);
   const [claimMsg, setClaimMsg] = useState("");
+  const [allMarkets, setAllMarkets] = useState([]);
+
+  // Загружаем ВСЕ рынки для портфолио (независимо от фильтра главной)
+  useEffect(() => {
+    if (!account) return;
+    fetch("/api/markets?limit=100000")
+      .then((r) => r.json())
+      .then((data) => setAllMarkets(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [account, userBets]);
+
+  const markets = allMarkets.length > 0 ? allMarkets : externalMarkets;
 
   if (!account) {
     return (
