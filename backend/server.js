@@ -12,6 +12,7 @@ import config from "./config.js";
 import apiRoutes from "./routes/api.js";
 import { startOracle, stopOracle } from "./services/oracle.js";
 import { startRelayer, stopRelayer } from "./services/outlayer-relayer.js";
+import { startTlsRelayer, stopTlsRelayer } from "./services/tls-relayer.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -101,6 +102,13 @@ app.listen(config.port, () => {
   // разрешение рынков через OutLayer TEE в UI
   console.log("[outlayer] Авторезолвинг отключён — пользователи тригерят TEE в UI");
 
+  // TLS Oracle Relayer (альтернативный путь через MPC-TLS + ZK)
+  if (config.tlsOracle.apiKey && config.near.contractId) {
+    startTlsRelayer();
+  } else {
+    console.log("[tls-relayer] Не запущен — проверьте TLS_ORACLE_API_KEY");
+  }
+
   // Keep-alive: Render free tier убивает процесс при засыпании,
   // поэтому self-ping не работает. Используйте внешний cron-сервис
   // (cron-job.org) для пинга /api/health каждые 14 мин.
@@ -111,11 +119,13 @@ process.on("SIGINT", () => {
   console.log("\nЗавершение работы...");
   stopOracle();
   stopRelayer();
+  stopTlsRelayer();
   process.exit(0);
 });
 
 process.on("SIGTERM", () => {
   stopOracle();
   stopRelayer();
+  stopTlsRelayer();
   process.exit(0);
 });

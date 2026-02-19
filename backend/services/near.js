@@ -180,6 +180,103 @@ export async function seedLiquidity(marketId) {
   return { marketId, bets: results, total: outcomes.length };
 }
 
+// ── TLS Oracle — альтернативное разрешение через MPC-TLS + ZK ────
+
+/**
+ * Submit аттестации в TLS Oracle контракт
+ * @returns {string} attestation_id (из логов транзакции)
+ */
+export async function submitTlsAttestation(proofData) {
+  const account = await initOracleAccount();
+
+  const result = await account.functionCall({
+    contractId: config.tlsOracle.contractId,
+    methodName: "submit_attestation",
+    args: {
+      source_url: proofData.sourceUrl,
+      server_name: proofData.serverName,
+      timestamp: proofData.timestamp,
+      response_data: proofData.responseData,
+      proof_a: proofData.proofA,
+      proof_b: proofData.proofB,
+      proof_c: proofData.proofC,
+      public_signals: proofData.publicSignals,
+    },
+    gas: "200000000000000", // 200 TGas (ZK verify)
+    attachedDeposit: "50000000000000000000000", // 0.05 NEAR (storage)
+  });
+
+  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
+  console.log(`[near] TLS Oracle submit_attestation. TX: ${txHash}`);
+
+  // Извлекаем attestation_id из логов
+  const logs =
+    result.receipts_outcome
+      ?.flatMap((r) => r.outcome?.logs || [])
+      .join("\n") || "";
+  const idMatch = logs.match(/id:\s*(\d+)/);
+  const attestationId = idMatch ? parseInt(idMatch[1]) : null;
+
+  return { txHash, attestationId };
+}
+
+/**
+ * Разрешить рынок через TLS Oracle аттестацию
+ */
+export async function requestTlsResolution(
+  marketId,
+  attestationId,
+  homeScore,
+  awayScore,
+  homeTeam,
+  awayTeam,
+  eventStatus,
+) {
+  const account = await initOracleAccount();
+
+  const result = await account.functionCall({
+    contractId: config.near.contractId,
+    methodName: "resolve_with_tls_attestation",
+    args: {
+      market_id: marketId,
+      attestation_id: attestationId,
+      home_score: homeScore,
+      away_score: awayScore,
+      home_team: homeTeam,
+      away_team: awayTeam,
+      event_status: eventStatus,
+    },
+    gas: "100000000000000", // 100 TGas
+    attachedDeposit: "0",
+  });
+
+  const txHash = result.transaction?.hash || result.transaction_outcome?.id;
+  console.log(
+    `[near] TLS Oracle resolution для #${marketId}. TX: ${txHash}`,
+  );
+  return txHash;
+}
+
+/**
+ * Чтение аттестации из TLS Oracle (view call)
+ */
+export async function getTlsAttestation(attestationId) {
+  const account = await initViewAccount();
+  try {
+    return account.viewFunction({
+      contractId: config.tlsOracle.contractId,
+      methodName: "get_attestation",
+      args: { id: attestationId },
+    });
+  } catch (err) {
+    console.error(
+      `[near] Ошибка чтения TLS аттестации #${attestationId}:`,
+      err.message,
+    );
+    return null;
+  }
+}
+
 // ── ESPN Oracle — запрос разрешения через OutLayer (on-chain) ────
 
 export async function requestResolution(marketId) {

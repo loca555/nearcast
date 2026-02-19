@@ -227,6 +227,17 @@ router.post("/trigger-espn-resolution/:id", async (req, res, next) => {
   }
 });
 
+// Триггер разрешения рынка через TLS Oracle (MPC-TLS + ZK proof)
+router.post("/trigger-tls-resolution/:id", async (req, res, next) => {
+  try {
+    const { triggerTlsResolution } = await import("../services/tls-relayer.js");
+    const result = await triggerTlsResolution(parseInt(req.params.id));
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Seed Liquidity — авто-ставки на все исходы ──────────────────
 
 // Вызывается после создания рынка для seed ликвидности

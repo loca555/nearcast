@@ -26,6 +26,11 @@ const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(30);
 /// Минимальный депозит для OutLayer (0.1 NEAR)
 const OUTLAYER_MIN_DEPOSIT: u128 = ONE_NEAR / 10;
 
+/// Gas для view-call к TLS Oracle (get_attestation)
+const GAS_FOR_TLS_VIEW: Gas = Gas::from_tgas(10);
+/// Gas для callback on_tls_attestation_result
+const GAS_FOR_TLS_CALLBACK: Gas = Gas::from_tgas(20);
+
 // ── Ключи хранилища ─────────────────────────────────────────────
 
 #[derive(BorshStorageKey)]
@@ -89,6 +94,42 @@ struct EspnResult {
     error: String,
 }
 
+/// Компактные данные ESPN из TLS Oracle response_data
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "serde")]
+struct TlsEspnData {
+    /// Home team
+    ht: String,
+    /// Away team
+    at: String,
+    /// Home score
+    hs: i32,
+    /// Away score
+    #[serde(rename = "as")]
+    away_score: i32,
+    /// Status: "final", "in", "pre"
+    st: String,
+    /// ESPN event ID
+    eid: String,
+}
+
+/// Аттестация из TLS Oracle контракта (формат get_attestation)
+#[derive(Deserialize)]
+#[serde(crate = "serde")]
+#[serde(rename_all = "camelCase")]
+struct TlsAttestation {
+    source_url: String,
+    server_name: String,
+    response_data: String,
+}
+
+/// Аргументы для callback on_tls_attestation_result
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "serde")]
+struct TlsResolutionCallbackArgs {
+    market_id: u64,
+}
+
 /// Источник WASM для OutLayer request_execution
 #[derive(Serialize)]
 #[serde(crate = "serde")]
@@ -150,6 +191,8 @@ pub struct NearCast {
     outlayer_contract: AccountId,
     /// Reclaim Protocol контракт (deprecated, сохраняем для совместимости Borsh)
     reclaim_contract: AccountId,
+    /// TLS Oracle контракт для альтернативного разрешения рынков
+    tls_oracle_contract: AccountId,
 }
 
 impl Default for NearCast {
@@ -167,6 +210,9 @@ impl Default for NearCast {
             outlayer_source_commit: "main".to_string(),
             outlayer_contract: "outlayer.testnet".parse().unwrap(),
             reclaim_contract: "reclaim-protocol.testnet".parse().unwrap(),
+            tls_oracle_contract: "tls-oracle-v2.nearcast-oracle.testnet"
+                .parse()
+                .unwrap(),
         }
     }
 }
@@ -395,6 +441,9 @@ impl NearCast {
             outlayer_source_commit: "main".to_string(),
             outlayer_contract: "outlayer.testnet".parse().unwrap(),
             reclaim_contract: "reclaim-protocol.testnet".parse().unwrap(),
+            tls_oracle_contract: "tls-oracle-v2.nearcast-oracle.testnet"
+                .parse()
+                .unwrap(),
         }
     }
 
@@ -808,6 +857,228 @@ impl NearCast {
     }
 
     // ══════════════════════════════════════════════════════════════
+    // TLS ORACLE — альтернативное разрешение через MPC-TLS + ZK proof
+    //
+    // Relayer вызывает resolve_with_tls_attestation, передавая attestation_id
+    // и распарсенные off-chain данные. Контракт верифицирует данные через
+    // cross-contract view call к TLS Oracle (сравнивает с response_data).
+    // ══════════════════════════════════════════════════════════════
+
+    /// Разрешить рынок через TLS Oracle аттестацию
+    ///
+    /// Делает cross-contract view call к TLS Oracle для верификации данных.
+    /// Любой может вызвать — permissionless (аналог request_resolution).
+    pub fn resolve_with_tls_attestation(
+        &mut self,
+        market_id: u64,
+        attestation_id: u64,
+        home_score: i32,
+        away_score: i32,
+        home_team: String,
+        away_team: String,
+        event_status: String,
+    ) -> Promise {
+        let market = self
+            .markets
+            .get(&market_id)
+            .expect("Рынок не найден")
+            .clone();
+        assert!(
+            !market.espn_event_id.is_empty(),
+            "Рынок не спортивный (нет espn_event_id)"
+        );
+        assert!(
+            market.status == "active" || market.status == "closed",
+            "Рынок уже разрешён или аннулирован"
+        );
+
+        let now = env::block_timestamp();
+        assert!(
+            now >= market.resolution_date,
+            "Время разрешения ещё не наступило"
+        );
+
+        log!(
+            "TLS Oracle запрос для рынка #{} (attestation #{})",
+            market_id,
+            attestation_id
+        );
+
+        // Аргументы для callback — передаём ожидаемые данные для верификации
+        let callback_args = serde_json::json!({
+            "market_id": market_id,
+            "attestation_id": attestation_id,
+            "expected_home_score": home_score,
+            "expected_away_score": away_score,
+            "expected_home_team": home_team,
+            "expected_away_team": away_team,
+            "expected_event_status": event_status,
+        });
+
+        // Cross-contract view call к TLS Oracle: get_attestation(id)
+        let view_args = serde_json::json!({ "id": attestation_id });
+
+        Promise::new(self.tls_oracle_contract.clone())
+            .function_call(
+                "get_attestation".to_string(),
+                serde_json::to_vec(&view_args).unwrap(),
+                NearToken::from_yoctonear(0),
+                GAS_FOR_TLS_VIEW,
+            )
+            .then(
+                Promise::new(env::current_account_id()).function_call(
+                    "on_tls_attestation_result".to_string(),
+                    serde_json::to_vec(&callback_args).unwrap(),
+                    NearToken::from_yoctonear(0),
+                    GAS_FOR_TLS_CALLBACK,
+                ),
+            )
+    }
+
+    /// Callback от TLS Oracle — верифицирует аттестацию и разрешает рынок
+    #[private]
+    pub fn on_tls_attestation_result(
+        &mut self,
+        market_id: u64,
+        attestation_id: u64,
+        expected_home_score: i32,
+        expected_away_score: i32,
+        expected_home_team: String,
+        expected_away_team: String,
+        expected_event_status: String,
+    ) -> String {
+        assert_eq!(
+            env::promise_results_count(),
+            1,
+            "Ожидается один результат"
+        );
+
+        let result = env::promise_result_checked(0, 1_000_000);
+        match result {
+            Ok(data) => {
+                let result_str =
+                    String::from_utf8(data).unwrap_or_else(|_| "invalid utf8".to_string());
+
+                // Парсим аттестацию из TLS Oracle
+                let attestation: TlsAttestation = match serde_json::from_str(&result_str) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        log!(
+                            "TLS Oracle: ошибка парсинга аттестации #{}: {}",
+                            attestation_id,
+                            e
+                        );
+                        return format!("Attestation parse error: {}", e);
+                    }
+                };
+
+                // Верификация: server_name должен быть ESPN
+                if attestation.server_name != "site.api.espn.com" {
+                    log!(
+                        "TLS Oracle: неверный server_name '{}' (ожидался site.api.espn.com)",
+                        attestation.server_name
+                    );
+                    return "Invalid server_name".to_string();
+                }
+
+                // Верификация: source_url должен содержать espn_event_id рынка
+                let market = match self.markets.get(&market_id) {
+                    Some(m) => m.clone(),
+                    None => return format!("Market #{} not found", market_id),
+                };
+
+                if !attestation.source_url.contains(&market.espn_event_id) {
+                    log!(
+                        "TLS Oracle: source_url не содержит event_id '{}'. URL: {}",
+                        market.espn_event_id,
+                        attestation.source_url
+                    );
+                    return "source_url does not match ESPN event".to_string();
+                }
+
+                // Парсим response_data — компактный формат ESPN
+                let espn_data: TlsEspnData = match serde_json::from_str(&attestation.response_data)
+                {
+                    Ok(d) => d,
+                    Err(e) => {
+                        log!(
+                            "TLS Oracle: ошибка парсинга response_data: {}",
+                            e
+                        );
+                        return format!("response_data parse error: {}", e);
+                    }
+                };
+
+                // Верификация: сравниваем данные из аттестации с переданными relayer
+                if espn_data.hs != expected_home_score
+                    || espn_data.away_score != expected_away_score
+                {
+                    log!(
+                        "TLS Oracle: данные не совпадают! Аттестация: {}:{}, ожидалось: {}:{}",
+                        espn_data.hs,
+                        espn_data.away_score,
+                        expected_home_score,
+                        expected_away_score
+                    );
+                    return "Score mismatch between attestation and request".to_string();
+                }
+
+                // Конвертируем в EspnResult для determine_winner
+                let espn_result = EspnResult {
+                    home_team: espn_data.ht.clone(),
+                    away_team: espn_data.at.clone(),
+                    home_score: espn_data.hs,
+                    away_score: espn_data.away_score,
+                    event_status: if espn_data.st == "final" {
+                        "final".to_string()
+                    } else {
+                        espn_data.st.clone()
+                    },
+                    error: String::new(),
+                };
+
+                // Определяем победителя ON-CHAIN (используем ту же логику)
+                let (winning_outcome, confidence, reasoning) =
+                    determine_winner(&market, &espn_result);
+
+                self.apply_resolution(
+                    market_id,
+                    winning_outcome,
+                    confidence,
+                    &format!("[TLS Oracle #{}] {}", attestation_id, reasoning),
+                    &espn_result.event_status,
+                    espn_result.home_score,
+                    espn_result.away_score,
+                );
+
+                log!(
+                    "TLS Oracle: рынок #{} — исход={}, счёт={}:{}, {}",
+                    market_id,
+                    winning_outcome,
+                    espn_result.home_score,
+                    espn_result.away_score,
+                    reasoning
+                );
+
+                format!(
+                    "Resolved via TLS Oracle: outcome={}, score={}:{}, {}",
+                    winning_outcome,
+                    espn_result.home_score,
+                    espn_result.away_score,
+                    reasoning
+                )
+            }
+            Err(_) => {
+                log!(
+                    "TLS Oracle: view call не удался для аттестации #{}",
+                    attestation_id
+                );
+                "TLS Oracle view call failed".to_string()
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // ПОЛУЧЕНИЕ ВЫИГРЫША / ВОЗВРАТ
     // ══════════════════════════════════════════════════════════════
 
@@ -928,6 +1199,16 @@ impl NearCast {
         );
     }
 
+    /// Настройка TLS Oracle контракта
+    pub fn set_tls_oracle_config(&mut self, tls_oracle_contract: AccountId) {
+        assert!(
+            env::predecessor_account_id() == self.owner,
+            "Только владелец"
+        );
+        self.tls_oracle_contract = tls_oracle_contract.clone();
+        log!("TLS Oracle настроен: {}", tls_oracle_contract);
+    }
+
     // ══════════════════════════════════════════════════════════════
     // VIEW МЕТОДЫ
     // ══════════════════════════════════════════════════════════════
@@ -1033,6 +1314,7 @@ impl NearCast {
             "oracle": self.oracle,
             "outlayerSourceRepo": self.outlayer_source_repo,
             "outlayerContract": self.outlayer_contract,
+            "tlsOracleContract": self.tls_oracle_contract,
         })
     }
 

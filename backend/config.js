@@ -30,6 +30,15 @@ export default {
     budgetLimit: parseFloat(process.env.API_BUDGET_LIMIT || "5"),
   },
 
+  // TLS Oracle — альтернативный oracle-провайдер (MPC-TLS + ZK proof)
+  tlsOracle: {
+    backendUrl: process.env.TLS_ORACLE_BACKEND_URL || "http://127.0.0.1:4001",
+    contractId:
+      process.env.TLS_ORACLE_CONTRACT ||
+      "tls-oracle-v2.nearcast-oracle.testnet",
+    apiKey: process.env.TLS_ORACLE_API_KEY || "",
+  },
+
   // Venice AI API (OpenAI-совместимый)
   ai: {
     apiKey: process.env.VENICE_API_KEY || "",
