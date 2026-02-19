@@ -123,13 +123,6 @@ struct TlsAttestation {
     response_data: String,
 }
 
-/// Аргументы для callback on_tls_attestation_result
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "serde")]
-struct TlsResolutionCallbackArgs {
-    market_id: u64,
-}
-
 /// Источник WASM для OutLayer request_execution
 #[derive(Serialize)]
 #[serde(crate = "serde")]
@@ -943,9 +936,9 @@ impl NearCast {
         attestation_id: u64,
         expected_home_score: i32,
         expected_away_score: i32,
-        expected_home_team: String,
-        expected_away_team: String,
-        expected_event_status: String,
+        _expected_home_team: String,
+        _expected_away_team: String,
+        _expected_event_status: String,
     ) -> String {
         assert_eq!(
             env::promise_results_count(),
