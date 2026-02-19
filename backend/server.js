@@ -97,12 +97,12 @@ app.listen(config.port, () => {
     console.log("[oracle] AI-оракул не запущен — проверьте VENICE_API_KEY и NEARCAST_CONTRACT");
   }
 
-  // OutLayer ESPN Relayer — авторезолвинг отключён,
-  // рынки разрешаются вручную через UI (кнопки OutLayer / zkTLS)
-  // if (config.near.contractId && config.oracle.privateKey) {
-  //   startRelayer();
-  // }
-  console.log("[outlayer] Авторезолвинг отключён — ручной режим через UI");
+  // OutLayer ESPN Relayer — авторезолвинг спортивных рынков
+  if (config.near.contractId && config.oracle.privateKey) {
+    startRelayer();
+  } else {
+    console.log("[outlayer] Relayer не запущен — проверьте NEARCAST_CONTRACT и ORACLE_PRIVATE_KEY");
+  }
 
   // Keep-alive: Render free tier убивает процесс при засыпании,
   // поэтому self-ping не работает. Используйте внешний cron-сервис

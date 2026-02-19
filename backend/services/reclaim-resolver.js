@@ -156,13 +156,19 @@ export function computeOracleResult(market, scores, eventStatus) {
     reasoning = `Score ${home}:${away} (type: ${marketType})`;
   }
 
+  // Нормализуем event_status: ESPN даёт "STATUS_FINAL",
+  // контракт ожидает "final" (нижний регистр без префикса)
+  const normalizedStatus = eventStatus
+    .replace(/^STATUS_/, "")
+    .toLowerCase();
+
   return {
     winning_outcome: winningOutcome,
     confidence: 1.0,
     reasoning,
     home_score: home,
     away_score: away,
-    event_status: eventStatus,
+    event_status: normalizedStatus,
   };
 }
 
