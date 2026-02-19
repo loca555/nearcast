@@ -281,8 +281,7 @@ export default function App() {
     try {
       const params = new URLSearchParams();
       params.set("limit", "100000");
-      // needsResolution — клиентский фильтр, загружаем все рынки
-      if (statusFilter !== "all" && statusFilter !== "needsResolution") params.set("status", statusFilter);
+      if (statusFilter !== "all") params.set("status", statusFilter);
       if (categoryFilter !== "all") params.set("category", categoryFilter);
       const res = await fetch(`/api/markets?${params}`);
       const data = await res.json();
@@ -501,8 +500,8 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
     return b.id - a.id;
   });
 
-  // Фильтрация по needsResolution (клиентская)
-  const statusFiltered = statusFilter === "needsResolution" ? sorted.filter(isReadyToResolve) : sorted;
+  // Убираем resolved/voided/needs-resolution из основного списка (они в Reporting)
+  const statusFiltered = sorted.filter((m) => m.status !== "resolved" && m.status !== "voided" && !isReadyToResolve(m));
 
   // Фильтрация по поисковому запросу (имя или ID)
   const searchFiltered = searchQuery.trim() === "" ? statusFiltered : statusFiltered.filter((m) => {
@@ -549,14 +548,11 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
 
       {/* Статус-фильтры */}
       <div style={S.filters}>
-        {[["all", t.filters.all], ["active", t.filters.active], ["closed", t.filters.inPlay], ["needsResolution", t.filters.needsResolution]].map(([s, label]) => {
-          const count = s === "needsResolution" ? markets.filter(isReadyToResolve).length : 0;
-          return (
+        {[["all", t.filters.all], ["active", t.filters.active], ["closed", t.filters.inPlay]].map(([s, label]) => (
             <button key={s} style={S.filterBtn(statusFilter === s)} onClick={() => setStatusFilter(s)}>
-              {label}{s === "needsResolution" && count > 0 ? ` (${count})` : ""}
+              {label}
             </button>
-          );
-        })}
+        ))}
       </div>
 
       {/* Сортировка + фильтр по категории */}
