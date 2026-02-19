@@ -21,10 +21,10 @@ import "@near-wallet-selector/modal-ui/styles.css";
 
 const TRANSLATIONS = {
   en: {
-    nav: { markets: "Markets", create: "+ Create", resolved: "Resolved", portfolio: "Portfolio", connect: "Connect" },
-    status: { active: "Active", closed: "In-play", resolved: "Resolved", voided: "Voided", resolvedWon: (w) => `Resolved: ${w} won` },
+    nav: { markets: "Markets", create: "+ Create", resolved: "Reporting", portfolio: "Portfolio", connect: "Connect" },
+    status: { active: "Active", closed: "In-play", resolution: "Resolution", resolved: "Resolved", voided: "Voided", resolvedWon: (w) => `Resolved: ${w} won` },
     stats: { markets: "Markets", volume: "Volume (NEAR)" },
-    filters: { all: "All", active: "Active", inPlay: "In-play", needsResolution: "Needs Resolution", resolved: "Resolved", voided: "Voided" },
+    filters: { all: "All", active: "Active", inPlay: "In-play", needsResolution: "Needs Resolution", awaitingResolution: "Awaiting Resolution", resolved: "Resolved", voided: "Voided" },
     sort: { label: "Sort", endDate: "End Date", volume: "Volume", newest: "Newest" },
     market: {
       pool: "Pool", bets: "Bets", outcomes: "Outcomes", until: "Until", resolution: "Resolution",
@@ -50,7 +50,7 @@ const TRANSLATIONS = {
       betsUntil: "Bets until:", resolution: "Resolution:",
       confirmCreate: "Confirm & Create", creating: "Creating...", marketCreated: "Market created!",
     },
-    resolved: { title: "Resolved Markets", noResolved: "No resolved markets yet" },
+    resolved: { title: "Reporting", noResolved: "No markets here yet" },
     portfolio: {
       title: "My Portfolio", refresh: "Refresh", balanceNear: "Balance (NEAR)",
       bets: "Bets", markets: "Markets", totalBet: "Total Bet (NEAR)",
@@ -131,6 +131,10 @@ function getStyles(th) {
 }
 
 const STATUS_COLORS = { active: "#22c55e", closed: "#f59e0b", resolved: "#3b82f6", voided: "#ef4444" };
+const getStatusColor = (m) => {
+  if (m.status === "closed" && isReadyToResolve(m)) return "#a855f7";
+  return STATUS_COLORS[m.status] || "#94a3b8";
+};
 
 // ══════════════════════════════════════════════════════════════
 // УТИЛИТЫ
@@ -159,7 +163,7 @@ function getStatusLabel(market, t) {
   if (!market) return "—";
   const s = market.status;
   if (s === "active") return t.status.active;
-  if (s === "closed") return t.status.closed;
+  if (s === "closed") return isReadyToResolve(market) ? t.status.resolution : t.status.closed;
   if (s === "resolved") {
     const idx = market.resolvedOutcome;
     const winner = idx != null && market.outcomes?.[idx];
@@ -557,10 +561,9 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
           onMouseLeave={(e) => (e.currentTarget.style.borderColor = th.cardBorder)}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
+              <span style={S.badge(getStatusColor(m))}>{getStatusLabel(m, t)}</span>
               <span style={S.badge("#94a3b8")}>{categoryLabel(m.category)}</span>
               {m.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
-              {isReadyToResolve(m) && <span style={{ ...S.badge("#f59e0b"), fontWeight: 700, animation: "pulse 2s infinite" }}>Resolve!</span>}
             </div>
           </div>
           <div style={S.cardTitle}>{m.question}</div>
@@ -657,7 +660,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
       <button style={S.backBtn} onClick={onBack}>{t.market.backToMarkets}</button>
       <div style={{ ...S.card, cursor: "default" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-          <span style={S.badge(STATUS_COLORS[market.status])}>{getStatusLabel(market, t)}</span>
+          <span style={S.badge(getStatusColor(market))}>{getStatusLabel(market, t)}</span>
           <span style={S.badge("#94a3b8")}>{categoryLabel(market.category)}</span>
           {market.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
         </div>
@@ -1319,18 +1322,25 @@ function ResolvedMarkets({ onOpen }) {
     load();
   }, []);
 
-  const filtered = filter === "all" ? markets : markets.filter((m) => m.status === filter);
+  const filtered = filter === "all" ? markets
+    : filter === "awaitingResolution" ? markets.filter(isReadyToResolve)
+    : markets.filter((m) => m.status === filter);
+
+  const awaitingCount = markets.filter(isReadyToResolve).length;
 
   return (
     <>
       <h2 style={{ fontSize: 22, marginBottom: 20 }}>{t.resolved.title}</h2>
       <div style={S.filters}>
-        {[["all", t.filters.all], ["resolved", t.filters.resolved], ["closed", t.filters.inPlay], ["voided", t.filters.voided]].map(([key, label]) => (
-          <button key={key} style={S.filterBtn(filter === key)} onClick={() => setFilter(key)}>
-            {label}
-            {key !== "all" && <span style={{ marginLeft: 4, opacity: 0.6 }}>({markets.filter((m) => m.status === key).length})</span>}
-          </button>
-        ))}
+        {[["all", t.filters.all], ["awaitingResolution", t.filters.awaitingResolution], ["resolved", t.filters.resolved], ["voided", t.filters.voided]].map(([key, label]) => {
+          const count = key === "awaitingResolution" ? awaitingCount : key !== "all" ? markets.filter((m) => m.status === key).length : 0;
+          return (
+            <button key={key} style={S.filterBtn(filter === key)} onClick={() => setFilter(key)}>
+              {label}
+              {key !== "all" && <span style={{ marginLeft: 4, opacity: 0.6 }}>({count})</span>}
+            </button>
+          );
+        })}
       </div>
 
       {loading ? (
@@ -1347,7 +1357,7 @@ function ResolvedMarkets({ onOpen }) {
               onMouseLeave={(e) => (e.currentTarget.style.borderColor = th.cardBorder)}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 4 }}>
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  <span style={S.badge(STATUS_COLORS[m.status] || "#94a3b8")}>{getStatusLabel(m, t)}</span>
+                  <span style={S.badge(getStatusColor(m))}>{getStatusLabel(m, t)}</span>
                   <span style={S.badge("#94a3b8")}>{categoryLabel(m.category)}</span>
                   {m.espnEventId && <span style={S.badge("#10b981")}>ESPN Oracle</span>}
                 </div>
@@ -1476,7 +1486,7 @@ function Portfolio({ account, userBets, markets, balance, onRefresh, onOpenMarke
             onMouseEnter={(e) => (e.currentTarget.style.borderColor = th.accentBg)}
             onMouseLeave={(e) => (e.currentTarget.style.borderColor = isClaimable ? "#22c55e44" : th.cardBorder)}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={S.badge(STATUS_COLORS[marketStatus] || "#94a3b8")}>{getStatusLabel(market || { status: marketStatus }, t)}</span>
+              <span style={S.badge(market ? getStatusColor(market) : (STATUS_COLORS[marketStatus] || "#94a3b8"))}>{getStatusLabel(market || { status: marketStatus }, t)}</span>
               {isClaimable && <span style={S.badge("#22c55e")}>{t.market.claimWinnings}</span>}
             </div>
             <div style={S.cardTitle}>{marketQuestion}</div>
