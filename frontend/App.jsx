@@ -484,6 +484,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
   const { t, th, S, lang, mob } = useApp();
   const [sortBy, setSortBy] = useState("newest");
   const [sportFilter, setSportFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Извлекаем уникальные категории для фильтра
   const categories = [...new Set(markets.map((m) => m.category).filter(Boolean))];
@@ -503,8 +504,16 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
   // Фильтрация по needsResolution (клиентская)
   const statusFiltered = statusFilter === "needsResolution" ? sorted.filter(isReadyToResolve) : sorted;
 
+  // Фильтрация по поисковому запросу (имя или ID)
+  const searchFiltered = searchQuery.trim() === "" ? statusFiltered : statusFiltered.filter((m) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (String(m.id) === q) return true;
+    if (q.startsWith("#") && String(m.id) === q.slice(1)) return true;
+    return m.question.toLowerCase().includes(q) || (m.description || "").toLowerCase().includes(q);
+  });
+
   // Фильтрация по категории
-  const filtered = sportFilter === "all" ? statusFiltered : statusFiltered.filter((m) => m.category === sportFilter);
+  const filtered = sportFilter === "all" ? searchFiltered : searchFiltered.filter((m) => m.category === sportFilter);
 
   return (
     <>
@@ -520,6 +529,23 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, onOpen }
           </div>
         </div>
       )}
+
+      {/* Поиск */}
+      <div style={{ marginBottom: 16, position: "relative" }}>
+        <input
+          type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by name or #id..."
+          style={{ ...S.input, marginBottom: 0, paddingLeft: 36, width: mob ? "100%" : 360 }}
+        />
+        <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: th.dimmed, fontSize: 16, pointerEvents: "none" }}>
+          &#x1F50D;
+        </span>
+        {searchQuery && (
+          <span onClick={() => setSearchQuery("")} style={{ position: "absolute", right: mob ? 12 : "auto", left: mob ? "auto" : 340, top: "50%", transform: "translateY(-50%)", color: th.muted, cursor: "pointer", fontSize: 16, fontWeight: 700 }}>
+            &times;
+          </span>
+        )}
+      </div>
 
       {/* Статус-фильтры */}
       <div style={S.filters}>
