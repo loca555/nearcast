@@ -9,6 +9,7 @@ import {
   placeBet,
   claimWinnings,
   requestResolution,
+  resolveWithReclaimProof,
   deposit as walletDeposit,
   withdraw as walletWithdraw,
 } from "./near-wallet.js";
@@ -757,16 +758,21 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
                     {resolving ? "Sending..." : "Resolve via OutLayer"}
                   </button>
 
-                  {/* Кнопка Reclaim zkTLS */}
+                  {/* Кнопка Reclaim zkTLS — proof с бэкенда, TX через кошелёк юзера */}
                   <button
                     style={{ ...S.primaryBtn, background: "#6366f1", opacity: resolving ? 0.5 : 1 }}
                     disabled={resolving}
                     onClick={async () => {
                       setResolving(true); setMessage("");
                       try {
-                        const res = await fetch(`/api/trigger-reclaim-resolution/${market.id}`, { method: "POST" });
+                        // 1. Бэкенд генерирует zkTLS proof
+                        setMessage("Generating zkTLS proof...");
+                        const res = await fetch(`/api/generate-reclaim-proof/${market.id}`, { method: "POST" });
                         const data = await res.json();
                         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                        // 2. Юзер подписывает TX через кошелёк
+                        setMessage("Sign transaction...");
+                        await resolveWithReclaimProof(market.id, data.proof, data.oracleResult);
                         markResolutionPending("zktls");
                       } catch (err) { setMessage(`Error: ${err.message}`); }
                       setResolving(false);

@@ -229,7 +229,40 @@ router.post("/trigger-espn-resolution/:id", async (req, res, next) => {
 
 // ── Reclaim zkTLS — альтернативный путь разрешения ──────────────
 
-// Триггер разрешения рынка через Reclaim zkTLS proof
+// Генерация Reclaim zkTLS proof — возвращает proof + oracleResult,
+// фронтенд сам отправляет TX через кошелёк юзера
+router.post("/generate-reclaim-proof/:id", async (req, res, next) => {
+  try {
+    const { generateEspnProof, computeOracleResult, transformProofForContract } = await import("../services/reclaim-resolver.js");
+    const { getMarket } = await import("../services/near.js");
+
+    const marketId = parseInt(req.params.id);
+    const market = await getMarket(marketId);
+    if (!market) throw new Error(`Рынок #${marketId} не найден`);
+
+    const espnId = market.espnEventId || market.espn_event_id;
+    if (!espnId) throw new Error("Рынок не спортивный (нет ESPN ID)");
+    if (market.status === "resolved" || market.status === "voided") {
+      throw new Error(`Рынок уже ${market.status}`);
+    }
+
+    // Генерируем proof + вычисляем результат
+    const { proof, scores, eventStatus } = await generateEspnProof(market);
+    const oracleResult = computeOracleResult(market, scores, eventStatus);
+    const contractProof = transformProofForContract(proof);
+
+    res.json({
+      success: true,
+      marketId,
+      proof: contractProof,
+      oracleResult: JSON.stringify(oracleResult),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Legacy: триггер разрешения через oracle account (для агентов/сервисов)
 router.post("/trigger-reclaim-resolution/:id", async (req, res, next) => {
   try {
     const { resolveViaReclaim } = await import("../services/reclaim-resolver.js");
