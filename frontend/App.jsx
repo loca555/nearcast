@@ -239,6 +239,15 @@ export default function App() {
   const S = getStyles(th);
   useEffect(() => { localStorage.setItem("nc-theme", theme); document.documentElement.setAttribute("data-theme", theme); }, [theme]);
 
+  // CSS keyframes для спиннера
+  useEffect(() => {
+    if (document.getElementById("nc-keyframes")) return;
+    const style = document.createElement("style");
+    style.id = "nc-keyframes";
+    style.textContent = "@keyframes spin { to { transform: rotate(360deg); } }";
+    document.head.appendChild(style);
+  }, []);
+
   const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
 
   // ── Инициализация ───────────────────────────────────────────
@@ -578,6 +587,41 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
   const [message, setMessage] = useState("");
   const [resolving, setResolving] = useState(false);
 
+  // Pending resolution — после отправки TX показываем "Awaiting resolution"
+  const pendingKey = `pendingResolution_${market.id}`;
+  const [resolutionPending, setResolutionPending] = useState(() => {
+    const saved = localStorage.getItem(pendingKey);
+    if (!saved) return null;
+    const data = JSON.parse(saved);
+    // Очищаем через 10 минут (resolution должен завершиться за это время)
+    if (Date.now() - data.timestamp > 10 * 60 * 1000) {
+      localStorage.removeItem(pendingKey);
+      return null;
+    }
+    return data;
+  });
+
+  // Очищаем pending если рынок уже зарезолвлен
+  useEffect(() => {
+    if (resolutionPending && (market.status === "resolved" || market.status === "voided")) {
+      localStorage.removeItem(pendingKey);
+      setResolutionPending(null);
+    }
+  }, [market.status]);
+
+  // Если pending — поллим рынок каждые 15 секунд
+  useEffect(() => {
+    if (!resolutionPending) return;
+    const interval = setInterval(() => onRefresh?.(), 15000);
+    return () => clearInterval(interval);
+  }, [resolutionPending]);
+
+  const markResolutionPending = (method) => {
+    const data = { method, timestamp: Date.now() };
+    localStorage.setItem(pendingKey, JSON.stringify(data));
+    setResolutionPending(data);
+  };
+
   const totalPool = BigInt(market.totalPool || "0");
 
   // Проверяем, есть ли у пользователя невостребованные выигрышные ставки или ставки для возврата
@@ -673,52 +717,66 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
           </div>
         )}
 
-        {/* Кнопки Resolution — для закрытых спортивных рынков после resolutionDate */}
+        {/* Resolution — для спортивных рынков после resolutionDate */}
         {market.espnEventId && (market.status === "closed" || market.status === "active") && Date.now() >= Number(BigInt(market.resolutionDate || 0) / BigInt(1_000_000)) && (
           <div style={{ marginTop: 20, padding: "16px", borderRadius: 10, background: `${th.cardBg}`, border: `1px solid ${th.cardBorder}` }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: th.text, marginBottom: 4 }}>
-              Permissionless Resolution
-            </div>
-            <div style={{ fontSize: 12, color: th.muted, marginBottom: 12 }}>
-              Anyone can trigger market resolution via ESPN API
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {/* Кнопка OutLayer TEE */}
-              <button
-                style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1 }}
-                disabled={resolving}
-                onClick={async () => {
-                  setResolving(true); setMessage("");
-                  try {
-                    await requestResolution(market.id);
-                    setMessage("Resolution request sent via OutLayer TEE");
-                    setTimeout(onRefresh, 5000);
-                  } catch (err) { setMessage(`${t.error}: ${err.message}`); }
-                  setResolving(false);
-                }}
-              >
-                {resolving ? "..." : "Resolve via OutLayer"}
-              </button>
+            {resolutionPending ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 18, height: 18, border: `3px solid ${th.muted}`, borderTopColor: th.accent, borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                  <div style={{ fontSize: 14, fontWeight: 600, color: th.text }}>
+                    Awaiting resolution...
+                  </div>
+                </div>
+                <div style={{ fontSize: 12, color: th.muted, marginTop: 6 }}>
+                  Triggered via {resolutionPending.method === "outlayer" ? "OutLayer TEE" : "Reclaim zkTLS"}. The market will update automatically once verified.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 14, fontWeight: 600, color: th.text, marginBottom: 4 }}>
+                  Permissionless Resolution
+                </div>
+                <div style={{ fontSize: 12, color: th.muted, marginBottom: 12 }}>
+                  Anyone can trigger market resolution via ESPN data
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {/* Кнопка OutLayer TEE */}
+                  <button
+                    style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1 }}
+                    disabled={resolving}
+                    onClick={async () => {
+                      setResolving(true); setMessage("");
+                      try {
+                        await requestResolution(market.id);
+                        markResolutionPending("outlayer");
+                      } catch (err) { setMessage(`Error: ${err.message}`); }
+                      setResolving(false);
+                    }}
+                  >
+                    {resolving ? "Sending..." : "Resolve via OutLayer"}
+                  </button>
 
-              {/* Кнопка Reclaim zkTLS */}
-              <button
-                style={{ ...S.primaryBtn, background: "#6366f1", opacity: resolving ? 0.5 : 1 }}
-                disabled={resolving}
-                onClick={async () => {
-                  setResolving(true); setMessage("");
-                  try {
-                    const res = await fetch(`/api/trigger-reclaim-resolution/${market.id}`, { method: "POST" });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-                    setMessage("Resolution request sent via zkTLS proof");
-                    setTimeout(onRefresh, 5000);
-                  } catch (err) { setMessage(`${t.error}: ${err.message}`); }
-                  setResolving(false);
-                }}
-              >
-                {resolving ? "..." : "Resolve via zkTLS"}
-              </button>
-            </div>
+                  {/* Кнопка Reclaim zkTLS */}
+                  <button
+                    style={{ ...S.primaryBtn, background: "#6366f1", opacity: resolving ? 0.5 : 1 }}
+                    disabled={resolving}
+                    onClick={async () => {
+                      setResolving(true); setMessage("");
+                      try {
+                        const res = await fetch(`/api/trigger-reclaim-resolution/${market.id}`, { method: "POST" });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                        markResolutionPending("zktls");
+                      } catch (err) { setMessage(`Error: ${err.message}`); }
+                      setResolving(false);
+                    }}
+                  >
+                    {resolving ? "Sending..." : "Resolve via zkTLS"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
