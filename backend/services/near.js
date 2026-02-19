@@ -188,7 +188,7 @@ export async function createMarket({
 
 // ── Seed Liquidity — авто-ставки на все исходы нового рынка ───────
 
-const BET_AMOUNT = "1000000000000000000000000"; // 1 NEAR
+const BET_AMOUNT = "100000000000000000000000"; // 0.1 NEAR
 
 export async function seedLiquidity(marketId) {
   const account = await initOracleAccount();
@@ -229,7 +229,7 @@ export async function seedLiquidity(marketId) {
         attachedDeposit: "0",
       });
       results.push({ outcome: i, label: outcomes[i], status: "ok" });
-      console.log(`[liquidity] Рынок #${marketId}, исход "${outcomes[i]}" — 1 NEAR`);
+      console.log(`[liquidity] Рынок #${marketId}, исход "${outcomes[i]}" — 0.1 NEAR`);
     } catch (err) {
       results.push({ outcome: i, label: outcomes[i], status: "error", error: err.message });
       console.log(`[liquidity] Рынок #${marketId}, исход "${outcomes[i]}" — ОШИБКА: ${err.message?.slice(0, 50)}`);
