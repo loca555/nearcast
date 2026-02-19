@@ -90,7 +90,7 @@ export const SPORTS_CONFIG = {
   football: {
     label: "Футбол", labelEn: "Football",
     search: "Football Soccer",
-    marketTypes: ["winner", "over-under", "both-score", "correct-score", "handicap", "first-half"],
+    marketTypes: ["winner", "over-under", "both-score"],
     countries: {
       england: {
         label: "Англия", labelEn: "England",
@@ -201,7 +201,7 @@ export const SPORTS_CONFIG = {
   basketball: {
     label: "Баскетбол", labelEn: "Basketball",
     search: "Basketball",
-    marketTypes: ["winner", "over-under", "handicap"],
+    marketTypes: ["winner", "over-under"],
     countries: {
       usa: {
         label: "США", labelEn: "USA",
@@ -215,7 +215,7 @@ export const SPORTS_CONFIG = {
   hockey: {
     label: "Хоккей", labelEn: "Hockey",
     search: "Ice Hockey",
-    marketTypes: ["winner", "over-under", "handicap"],
+    marketTypes: ["winner", "over-under"],
     countries: {
       "north-america": {
         label: "США/Канада", labelEn: "USA/Canada",
@@ -228,7 +228,7 @@ export const SPORTS_CONFIG = {
   "american-football": {
     label: "Американский футбол", labelEn: "American Football",
     search: "American Football",
-    marketTypes: ["winner", "over-under", "handicap"],
+    marketTypes: ["winner", "over-under"],
     countries: {
       usa: {
         label: "США", labelEn: "USA",
@@ -242,7 +242,7 @@ export const SPORTS_CONFIG = {
   baseball: {
     label: "Бейсбол", labelEn: "Baseball",
     search: "Baseball",
-    marketTypes: ["winner", "over-under", "handicap"],
+    marketTypes: ["winner", "over-under"],
     countries: {
       usa: {
         label: "США", labelEn: "USA",
@@ -268,7 +268,7 @@ export const SPORTS_CONFIG = {
   tennis: {
     label: "Теннис", labelEn: "Tennis",
     search: "Tennis",
-    marketTypes: ["winner", "over-under", "handicap"],
+    marketTypes: ["winner", "over-under"],
     countries: {
       international: {
         label: "Международный", labelEn: "International",
@@ -298,9 +298,6 @@ export const MARKET_TYPES = {
   "winner": { ru: "Кто победит", en: "Winner" },
   "over-under": { ru: "Тотал (больше/меньше)", en: "Over/Under" },
   "both-score": { ru: "Обе забьют", en: "Both Teams to Score" },
-  "correct-score": { ru: "Точный счёт", en: "Correct Score" },
-  "handicap": { ru: "Гандикап", en: "Handicap" },
-  "first-half": { ru: "Исход 1-го тайма", en: "First Half Result" },
 };
 
 // ── AI: получить ближайшие матчи ─────────────────────────────
@@ -386,38 +383,31 @@ Rules:
   return parseAIJson(text);
 }
 
-// ── Типичные линии Over/Under и Handicap по видам спорта ─────
+// ── Типичные линии Over/Under по видам спорта ────────────────
 
 const SPORT_LINES = {
   football: {
     ou: { line: "2.5", unit: { en: "goals", ru: "голов" }, examples: ["1.5", "2.5", "3.5"] },
-    hc: { line: "1.5", unit: { en: "goals", ru: "голов" }, examples: ["-1", "-1.5", "-2"] },
   },
   basketball: {
     ou: { line: "215.5", unit: { en: "points", ru: "очков" }, examples: ["200.5", "210.5", "220.5", "230.5"] },
-    hc: { line: "5.5", unit: { en: "points", ru: "очков" }, examples: ["-3.5", "-5.5", "-7.5", "-10.5"] },
   },
   hockey: {
     ou: { line: "5.5", unit: { en: "goals", ru: "шайб" }, examples: ["4.5", "5.5", "6.5"] },
-    hc: { line: "1.5", unit: { en: "goals", ru: "шайб" }, examples: ["-1.5", "+1.5"] },
   },
   "american-football": {
     ou: { line: "45.5", unit: { en: "points", ru: "очков" }, examples: ["40.5", "43.5", "47.5", "50.5"] },
-    hc: { line: "3.5", unit: { en: "points", ru: "очков" }, examples: ["-3", "-3.5", "-6.5", "-7"] },
   },
   baseball: {
     ou: { line: "8.5", unit: { en: "runs", ru: "ранов" }, examples: ["7.5", "8.5", "9.5"] },
-    hc: { line: "1.5", unit: { en: "runs", ru: "ранов" }, examples: ["-1.5", "+1.5"] },
   },
   mma: {
     ou: { line: "2.5", unit: { en: "rounds", ru: "раундов" }, examples: ["1.5", "2.5"] },
-    hc: null,
   },
   tennis: {
     ou: { line: "22.5", unit: { en: "games", ru: "геймов" }, examples: ["20.5", "22.5", "24.5"] },
-    hc: { line: "3.5", unit: { en: "games", ru: "геймов" }, examples: ["-2.5", "-3.5", "-4.5"] },
   },
-  racing: { ou: null, hc: null },
+  racing: { ou: null },
 };
 
 function getSportLinesHint(sport, lang) {
@@ -430,13 +420,6 @@ function getSportLinesHint(sport, lang) {
     parts.push(lang === "en"
       ? `Over/Under: typical line ${sl.ou.line} ${u} (common lines: ${ex})`
       : `Тотал: типичная линия ${sl.ou.line} ${u} (обычные линии: ${ex})`);
-  }
-  if (sl.hc) {
-    const u = lang === "en" ? sl.hc.unit.en : sl.hc.unit.ru;
-    const ex = sl.hc.examples.join(", ");
-    parts.push(lang === "en"
-      ? `Handicap: typical line ${sl.hc.line} ${u} (common lines: ${ex})`
-      : `Гандикап: типичная линия ${sl.hc.line} ${u} (обычные линии: ${ex})`);
   }
   return parts.length > 0 ? "\n\nSport-specific lines:\n" + parts.join("\n") : "";
 }
@@ -466,9 +449,6 @@ export async function generateMarket({
       ? `["Over ${sl.ou.line} ${sl.ou.unit.en}", "Under ${sl.ou.line} ${sl.ou.unit.en}"]`
       : `["Больше ${sl.ou.line} ${sl.ou.unit.ru}", "Меньше ${sl.ou.line} ${sl.ou.unit.ru}"]`)
     : (lang === "en" ? `["Over 2.5", "Under 2.5"]` : `["Больше 2.5", "Меньше 2.5"]`);
-  const hcExample = sl.hc
-    ? `["${teamA} -${sl.hc.line}", "${teamB} +${sl.hc.line}"]`
-    : `["${teamA} -1.5", "${teamB} +1.5"]`;
 
   const prompt = lang === "en"
     ? `Generate a prediction market for a match.
@@ -497,10 +477,7 @@ RESPOND STRICTLY IN JSON:
 Outcome rules by type:
 - winner: ["${teamA}", "Draw", "${teamB}"] (remove "Draw" if impossible, e.g. tennis/MMA)
 - over-under: ${ouExample} (pick the best line for this sport and matchup)
-- both-score: ["Yes, Both Score", "No"]
-- correct-score: ["1:0", "2:1", "2:0", "0:0", "0:1", "1:2", "0:2", "Other"] (up to 8)
-- handicap: ${hcExample} (pick the best line for this matchup)
-- first-half: ["${teamA}", "Draw", "${teamB}"]`
+- both-score: ["Yes, Both Score", "No"]`
     : `Сгенерируй предсказательный рынок для матча.
 
 Матч: ${teamA} vs ${teamB}
@@ -527,10 +504,7 @@ ${linesHint}
 Правила исходов по типу:
 - winner: ["${teamA}", "Ничья", "${teamB}"] (убери "Ничья" если ничья невозможна, напр. теннис/MMA)
 - over-under: ${ouExample} (выбери лучшую линию для данного спорта и матча)
-- both-score: ["Да, обе забьют", "Нет"]
-- correct-score: ["1:0", "2:1", "2:0", "0:0", "0:1", "1:2", "0:2", "Другой счёт"] (до 8 вариантов)
-- handicap: ${hcExample} (выбери лучшую линию для данного матча)
-- first-half: ["${teamA}", "Ничья", "${teamB}"]`;
+- both-score: ["Да, обе забьют", "Нет"]`;
 
   checkBudget();
 

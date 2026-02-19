@@ -178,6 +178,26 @@ impl Default for NearCast {
 // Контракт знает outcomes рынка и получает сырые данные из ESPN.
 // ══════════════════════════════════════════════════════════════════
 
+/// Безопасное умножение и деление: a * b / c без overflow u128
+/// Используем промежуточное деление чтобы результат поместился в u128
+fn safe_mul_div(a: u128, b: u128, c: u128) -> u128 {
+    // a * b / c = (a / c) * b + (a % c) * b / c
+    // Если (a % c) * b тоже переполняет, делим ещё раз
+    let whole = (a / c) * b;
+    let rem = a % c;
+    // rem < c, но rem * b может переполнить если оба > ~10^19
+    // Проверяем: если rem * b безопасно — считаем напрямую
+    if rem <= u128::MAX / b.max(1) {
+        whole + rem * b / c
+    } else {
+        // Второй уровень: (rem * b) / c через деление rem
+        // rem * b / c = rem * (b / c) + rem * (b % c) / c
+        let b_div = b / c;
+        let b_rem = b % c;
+        whole + rem * b_div + rem * b_rem / c
+    }
+}
+
 /// Нечёткое совпадение: проверяем что одна строка содержит другую
 fn fuzzy_match(outcome: &str, espn_name: &str) -> bool {
     if outcome.is_empty() || espn_name.is_empty() {
@@ -835,7 +855,10 @@ impl NearCast {
                 let winning_pool: u128 =
                     market.outcome_pools[market.resolved_outcome as usize].into();
                 if winning_pool > 0 {
-                    payout = payout * total_pool / winning_pool;
+                    // Безопасный расчёт без overflow u128:
+                    // payout * total_pool может переполнить (yoctoNEAR ~ 10^24)
+                    // Делим через промежуточный масштаб
+                    payout = safe_mul_div(payout, total_pool, winning_pool);
                 }
             }
         }
