@@ -90,7 +90,7 @@ export const SPORTS_CONFIG = {
   football: {
     label: "Футбол", labelEn: "Football",
     search: "Football Soccer",
-    marketTypes: ["winner", "over-under", "both-score"],
+    marketTypes: ["winner", "over-under"],
     countries: {
       england: {
         label: "Англия", labelEn: "England",
@@ -297,7 +297,6 @@ export const SPORTS_CONFIG = {
 export const MARKET_TYPES = {
   "winner": { ru: "Кто победит", en: "Winner" },
   "over-under": { ru: "Тотал (больше/меньше)", en: "Over/Under" },
-  "both-score": { ru: "Обе забьют", en: "Both Teams to Score" },
 };
 
 // ── AI: получить ближайшие матчи ─────────────────────────────
@@ -476,8 +475,7 @@ RESPOND STRICTLY IN JSON:
 
 Outcome rules by type:
 - winner: ["${teamA}", "Draw", "${teamB}"] (remove "Draw" if impossible, e.g. tennis/MMA)
-- over-under: ${ouExample} (pick the best line for this sport and matchup)
-- both-score: ["Yes, Both Score", "No"]`
+- over-under: ${ouExample} (pick the best line for this sport and matchup)`
     : `Сгенерируй предсказательный рынок для матча.
 
 Матч: ${teamA} vs ${teamB}
@@ -503,8 +501,7 @@ ${linesHint}
 
 Правила исходов по типу:
 - winner: ["${teamA}", "Ничья", "${teamB}"] (убери "Ничья" если ничья невозможна, напр. теннис/MMA)
-- over-under: ${ouExample} (выбери лучшую линию для данного спорта и матча)
-- both-score: ["Да, обе забьют", "Нет"]`;
+- over-under: ${ouExample} (выбери лучшую линию для данного спорта и матча)`;
 
   checkBudget();
 
