@@ -37,9 +37,4 @@ export default {
     model: process.env.AI_MODEL || "claude-sonnet-45",
   },
 
-  // Reclaim Protocol (zkTLS proof'ы)
-  reclaim: {
-    appId: process.env.RECLAIM_APP_ID || "",
-    appSecret: process.env.RECLAIM_APP_SECRET || "",
-  },
 };

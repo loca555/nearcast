@@ -39,7 +39,7 @@ export async function initWalletSelector(networkId = "testnet", contract = "", n
     createAccessKeyFor: contract
       ? {
           contractId: contract,
-          methodNames: ["place_bet", "claim_winnings", "withdraw", "create_market", "resolve_with_reclaim_proof", "request_resolution"],
+          methodNames: ["place_bet", "claim_winnings", "withdraw", "create_market", "request_resolution"],
         }
       : undefined,
   });
@@ -47,7 +47,7 @@ export async function initWalletSelector(networkId = "testnet", contract = "", n
   modal = setupModal(selector, {
     theme: "dark",
     contractId: contract || undefined,
-    methodNames: ["place_bet", "claim_winnings", "withdraw", "create_market", "resolve_with_reclaim_proof", "request_resolution"],
+    methodNames: ["place_bet", "claim_winnings", "withdraw", "create_market", "request_resolution"],
   });
   return { selector, modal };
 }
@@ -192,22 +192,6 @@ export async function requestResolution(marketId) {
         { market_id: marketId },
         300_000_000_000_000n, // 300 TGas (OutLayer + callback)
         nearToYocto(0.5) // attached 0.5 NEAR — попап кошелька
-      ),
-    ],
-  });
-}
-
-// Разрешение через Reclaim zkTLS proof (proof генерирует бэкенд, TX подписывает юзер)
-export async function resolveWithReclaimProof(marketId, proof, oracleResult) {
-  const wallet = await selector.wallet();
-  return wallet.signAndSendTransaction({
-    receiverId: contractId,
-    actions: [
-      actionCreators.functionCall(
-        "resolve_with_reclaim_proof",
-        { market_id: marketId, proof, oracle_result: oracleResult },
-        300_000_000_000_000n, // 300 TGas (verify + callback)
-        0n // без deposit
       ),
     ],
   });

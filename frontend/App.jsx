@@ -9,7 +9,6 @@ import {
   placeBet,
   claimWinnings,
   requestResolution,
-  resolveWithReclaimProof,
   deposit as walletDeposit,
   withdraw as walletWithdraw,
 } from "./near-wallet.js";
@@ -733,7 +732,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: th.muted, marginTop: 6 }}>
-                  Triggered via {resolutionPending.method === "outlayer" ? "OutLayer TEE" : "Reclaim zkTLS"}. The market will update automatically once verified.
+                  Triggered via OutLayer TEE. The market will update automatically once verified.
                 </div>
               </>
             ) : (
@@ -744,46 +743,20 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
                 <div style={{ fontSize: 12, color: th.muted, marginBottom: 12 }}>
                   Anyone can trigger market resolution via ESPN data
                 </div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  {/* Кнопка OutLayer TEE */}
-                  <button
-                    style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1 }}
-                    disabled={resolving}
-                    onClick={async () => {
-                      setResolving(true); setMessage("");
-                      try {
-                        await requestResolution(market.id);
-                        markResolutionPending("outlayer");
-                      } catch (err) { setMessage(`Error: ${err.message}`); }
-                      setResolving(false);
-                    }}
-                  >
-                    {resolving ? "Sending..." : "Resolve via OutLayer"}
-                  </button>
-
-                  {/* Кнопка Reclaim zkTLS — proof с бэкенда, TX через кошелёк юзера */}
-                  <button
-                    style={{ ...S.primaryBtn, background: "#6366f1", opacity: resolving ? 0.5 : 1 }}
-                    disabled={resolving}
-                    onClick={async () => {
-                      setResolving(true); setMessage("");
-                      try {
-                        // 1. Бэкенд генерирует zkTLS proof
-                        setMessage("Generating zkTLS proof...");
-                        const res = await fetch(`/api/generate-reclaim-proof/${market.id}`, { method: "POST" });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-                        // 2. Юзер подписывает TX через кошелёк
-                        setMessage("Sign transaction...");
-                        await resolveWithReclaimProof(market.id, data.proof, data.oracleResult);
-                        markResolutionPending("zktls");
-                      } catch (err) { setMessage(`Error: ${err.message}`); }
-                      setResolving(false);
-                    }}
-                  >
-                    {resolving ? "Sending..." : "Resolve via zkTLS"}
-                  </button>
-                </div>
+                <button
+                  style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1 }}
+                  disabled={resolving}
+                  onClick={async () => {
+                    setResolving(true); setMessage("");
+                    try {
+                      await requestResolution(market.id);
+                      markResolutionPending("outlayer");
+                    } catch (err) { setMessage(`Error: ${err.message}`); }
+                    setResolving(false);
+                  }}
+                >
+                  {resolving ? "Sending..." : "Resolve via TEE"}
+                </button>
               </>
             )}
           </div>

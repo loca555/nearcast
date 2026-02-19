@@ -97,9 +97,9 @@ app.listen(config.port, () => {
     console.log("[oracle] AI-оракул не запущен — проверьте VENICE_API_KEY и NEARCAST_CONTRACT");
   }
 
-  // OutLayer ESPN Relayer отключён — пользователи сами выбирают
-  // метод резолвинга (OutLayer TEE или Reclaim zkTLS) через UI
-  console.log("[outlayer] Авторезолвинг отключён — пользователи выбирают метод в UI");
+  // OutLayer ESPN Relayer отключён — пользователи сами тригерят
+  // разрешение рынков через OutLayer TEE в UI
+  console.log("[outlayer] Авторезолвинг отключён — пользователи тригерят TEE в UI");
 
   // Keep-alive: Render free tier убивает процесс при засыпании,
   // поэтому self-ping не работает. Используйте внешний cron-сервис
