@@ -1384,13 +1384,19 @@ function Portfolio({ account, userBets, markets: externalMarkets, balance, onRef
     );
   }
 
+  // Фильтруем осиротевшие ставки от предыдущих версий контракта
+  const validBets = userBets.filter((bet) => {
+    const market = markets.find((m) => m.id === bet.marketId);
+    return market && Number(bet.timestamp) >= Number(market.createdAt);
+  });
+
   const betsByMarket = {};
-  for (const bet of userBets) {
+  for (const bet of validBets) {
     if (!betsByMarket[bet.marketId]) betsByMarket[bet.marketId] = [];
     betsByMarket[bet.marketId].push(bet);
   }
   const marketIds = Object.keys(betsByMarket).map(Number);
-  const totalBet = userBets.reduce((sum, b) => sum + BigInt(b.amount), 0n);
+  const totalBet = validBets.reduce((sum, b) => sum + BigInt(b.amount), 0n);
 
   // Рынки с невостребованными выигрышами
   const claimableMarketIds = marketIds.filter((mid) => {
@@ -1430,7 +1436,7 @@ function Portfolio({ account, userBets, markets: externalMarkets, balance, onRef
           <div style={S.statLabel}>{t.portfolio.balanceNear}</div>
         </div>
         <div style={{ ...S.statCard, ...(mob ? { minWidth: 0 } : {}) }}>
-          <div style={{ ...S.statValue, fontSize: mob ? 18 : 24 }}>{userBets.length}</div>
+          <div style={{ ...S.statValue, fontSize: mob ? 18 : 24 }}>{validBets.length}</div>
           <div style={S.statLabel}>{t.portfolio.bets}</div>
         </div>
         <div style={{ ...S.statCard, ...(mob ? { minWidth: 0 } : {}) }}>
