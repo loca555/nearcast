@@ -2,10 +2,12 @@
 ///
 /// Запускается внутри Intel TDX (Trusted Execution Environment).
 /// Получает ESPN event ID, делает HTTP-запрос к ESPN API,
-/// парсит счёт матча и определяет победителя.
+/// возвращает СЫРЫЕ данные (имена команд, счёт, статус).
 ///
-/// Вход (stdin): JSON с метаданными рынка
-/// Выход (stdout): JSON с результатом (<=900 байт)
+/// Логика определения победителя — в смарт-контракте (on-chain).
+///
+/// Вход (stdin): JSON с ESPN event ID, sport, league
+/// Выход (stdout): JSON с сырыми данными ESPN (<=900 байт)
 
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
@@ -18,49 +20,47 @@ struct Input {
     espn_event_id: String,
     sport: String,
     league: String,
-    outcomes: Vec<String>,
-    market_type: String, // "winner" | "over-under" | "both-score"
 }
 
 // ── Выходные данные (stdout, <=900 байт) ─────────────────────────
+/// Сырые данные ESPN — контракт сам определит winning_outcome
 
 #[derive(Serialize)]
 struct Output {
-    winning_outcome: i32,
-    confidence: f64,
-    reasoning: String,
+    home_team: String,
+    away_team: String,
     home_score: i32,
     away_score: i32,
-    event_status: String,
+    event_status: String, // "final" | "pre" | "in" | "error"
+    error: String,        // пустая строка если всё ОК
 }
 
 impl Output {
     fn error(msg: &str) -> Self {
         Output {
-            winning_outcome: -1,
-            confidence: 0.0,
-            reasoning: msg.to_string(),
+            home_team: String::new(),
+            away_team: String::new(),
             home_score: -1,
             away_score: -1,
             event_status: "error".to_string(),
+            error: msg.to_string(),
         }
     }
 
     fn not_finished(state: &str) -> Self {
         Output {
-            winning_outcome: -1,
-            confidence: 0.0,
-            reasoning: format!("Event not completed (state: {})", state),
+            home_team: String::new(),
+            away_team: String::new(),
             home_score: -1,
             away_score: -1,
             event_status: state.to_string(),
+            error: String::new(),
         }
     }
 }
 
 // ── ESPN API структуры ───────────────────────────────────────────
 
-/// ESPN summary API ответ — используем только нужные поля
 #[derive(Deserialize)]
 struct ESPNResponse {
     header: Option<Header>,
@@ -168,98 +168,45 @@ fn run() -> Result<Output, Box<dyn std::error::Error>> {
         return Ok(Output::not_finished(state));
     }
 
-    // Парсим счёт
+    // Парсим счёт и имена команд
     let competitors = comp.competitors.unwrap_or_default();
-    let home = competitors
+    let home_comp = competitors
         .iter()
         .find(|c| c.home_away.as_deref() == Some("home"));
-    let away = competitors
+    let away_comp = competitors
         .iter()
         .find(|c| c.home_away.as_deref() == Some("away"));
 
-    let home_score: i32 = home
+    let home_score: i32 = home_comp
         .and_then(|c| c.score.as_ref())
         .and_then(|s| s.parse().ok())
         .unwrap_or(-1);
-    let away_score: i32 = away
+    let away_score: i32 = away_comp
         .and_then(|c| c.score.as_ref())
         .and_then(|s| s.parse().ok())
         .unwrap_or(-1);
+
+    let home_team = home_comp
+        .and_then(|c| c.team.as_ref())
+        .and_then(|t| t.display_name.as_deref())
+        .unwrap_or("")
+        .to_string();
+    let away_team = away_comp
+        .and_then(|c| c.team.as_ref())
+        .and_then(|t| t.display_name.as_deref())
+        .unwrap_or("")
+        .to_string();
 
     if home_score < 0 || away_score < 0 {
         return Ok(Output::error("Could not parse scores from ESPN"));
     }
 
-    // Определяем победителя по типу рынка
-    let (winning_outcome, reasoning) = match input.market_type.as_str() {
-        "winner" => resolve_winner(&input.outcomes, home_score, away_score),
-        "over-under" => resolve_over_under(&input.outcomes, home_score, away_score),
-        "both-score" => resolve_both_score(home_score, away_score),
-        _ => (-1i32, format!("Unknown market type: {}", input.market_type)),
-    };
-
     Ok(Output {
-        winning_outcome,
-        confidence: if winning_outcome >= 0 { 1.0 } else { 0.0 },
-        reasoning,
+        home_team,
+        away_team,
         home_score,
         away_score,
         event_status: "final".to_string(),
+        error: String::new(),
     })
-}
-
-// ── Логика определения победителя ────────────────────────────────
-
-/// Winner: 3-way (с ничьёй — футбол) или 2-way (баскетбол, теннис)
-fn resolve_winner(outcomes: &[String], home: i32, away: i32) -> (i32, String) {
-    if outcomes.len() == 3 {
-        // 3-way: [HomeTeam, Draw, AwayTeam]
-        if home > away {
-            (0, format!("{} {} wins {}:{}", outcomes[0], home, away, outcomes[0]))
-        } else if home < away {
-            (2, format!("{} wins {}:{}", outcomes[2], home, away))
-        } else {
-            (1, format!("Draw {}:{}", home, away))
-        }
-    } else if outcomes.len() == 2 {
-        // 2-way: [HomeTeam, AwayTeam]
-        if home > away {
-            (0, format!("{} wins {}:{}", outcomes[0], home, away))
-        } else if home < away {
-            (1, format!("{} wins {}:{}", outcomes[1], home, away))
-        } else {
-            // Ничья в 2-way рынке — void
-            (-1, format!("Draw {}:{} in 2-way market", home, away))
-        }
-    } else {
-        (-1, "Invalid outcomes count for winner".to_string())
-    }
-}
-
-/// Over/Under: outcomes ["Over X.5", "Under X.5"]
-fn resolve_over_under(outcomes: &[String], home: i32, away: i32) -> (i32, String) {
-    let total = home + away;
-    // Извлекаем порог из названия первого исхода (напр. "Over 2.5" → 2.5)
-    let threshold = outcomes
-        .first()
-        .and_then(|o| {
-            o.split_whitespace()
-                .find_map(|word| word.parse::<f64>().ok())
-        })
-        .unwrap_or(2.5);
-
-    if (total as f64) > threshold {
-        (0, format!("Total {}>{} ({}:{})", total, threshold, home, away))
-    } else {
-        (1, format!("Total {}<{} ({}:{})", total, threshold, home, away))
-    }
-}
-
-/// Both teams to score: [Yes, No]
-fn resolve_both_score(home: i32, away: i32) -> (i32, String) {
-    if home > 0 && away > 0 {
-        (0, format!("Both scored ({}:{})", home, away))
-    } else {
-        (1, format!("Not both scored ({}:{})", home, away))
-    }
 }

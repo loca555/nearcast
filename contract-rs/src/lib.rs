@@ -3,8 +3,8 @@
 /// Контракт поддерживает:
 /// - Создание рынков с опциональными ESPN метаданными
 /// - Ставки с внутреннего баланса (pari-mutuel)
-/// - Разрешение рынков оракулом (AI или ESPN)
 /// - Permissionless разрешение через OutLayer TEE (ESPN Oracle)
+/// - Логика определения победителя ON-CHAIN (fuzzy match по именам команд)
 /// - Аннулирование (void) с возвратом ставок
 
 use near_sdk::json_types::U128;
@@ -21,15 +21,10 @@ const MIN_OUTCOMES: usize = 2;
 
 /// Gas для вызова OutLayer request_execution
 const GAS_FOR_OUTLAYER: Gas = Gas::from_tgas(200);
-/// Gas для callback on_resolution_result
-const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(20);
+/// Gas для callback on_resolution_result (увеличен — теперь матчинг on-chain)
+const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(30);
 /// Минимальный депозит для OutLayer (0.1 NEAR)
 const OUTLAYER_MIN_DEPOSIT: u128 = ONE_NEAR / 10;
-
-/// Gas для вызова Reclaim verify_proof
-const GAS_FOR_RECLAIM_VERIFY: Gas = Gas::from_tgas(100);
-/// Gas для callback on_reclaim_verified
-const GAS_FOR_RECLAIM_CALLBACK: Gas = Gas::from_tgas(30);
 
 // ── Ключи хранилища ─────────────────────────────────────────────
 
@@ -81,16 +76,17 @@ pub struct Bet {
     pub claimed: bool,
 }
 
-/// Результат WASM Worker из OutLayer (stdout) / Reclaim zkTLS
+/// Сырые данные ESPN из TEE Worker (stdout)
+/// Worker возвращает только счёт и имена — без winning_outcome
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "serde")]
-struct OracleResult {
-    winning_outcome: i32,
-    confidence: f64,
-    reasoning: String,
+struct EspnResult {
+    home_team: String,
+    away_team: String,
     home_score: i32,
     away_score: i32,
-    event_status: String,
+    event_status: String, // "final" | "pre" | "in" | "error"
+    error: String,
 }
 
 /// Источник WASM для OutLayer request_execution
@@ -118,15 +114,13 @@ struct ResourceLimits {
     max_execution_seconds: u32,
 }
 
-/// Входные данные для WASM Worker
+/// Входные данные для WASM Worker (упрощённые — без outcomes/market_type)
 #[derive(Serialize)]
 #[serde(crate = "serde")]
 struct WorkerInput {
     espn_event_id: String,
     sport: String,
     league: String,
-    outcomes: Vec<String>,
-    market_type: String,
 }
 
 /// Аргументы для callback on_resolution_result
@@ -134,50 +128,6 @@ struct WorkerInput {
 #[serde(crate = "serde")]
 struct ResolutionCallbackArgs {
     market_id: u64,
-}
-
-// ── Reclaim Protocol zkTLS структуры ────────────────────────────
-
-/// Reclaim zkTLS Proof — для on-chain верификации через reclaim-protocol.testnet
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(crate = "serde")]
-pub struct ReclaimProof {
-    pub claim_info: ClaimInfo,
-    pub signed_claim: SignedClaim,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(crate = "serde")]
-pub struct ClaimInfo {
-    pub provider: String,
-    pub parameters: String,
-    pub context: String,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(crate = "serde")]
-pub struct SignedClaim {
-    pub claim: ClaimData,
-    pub signatures: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(crate = "serde")]
-pub struct ClaimData {
-    pub identifier: String,
-    pub owner: String,
-    pub epoch: u64,
-    #[serde(rename = "timestampS")]
-    pub timestamp_s: u64,
-}
-
-/// Аргументы для callback on_reclaim_verified
-#[derive(Serialize, Deserialize)]
-#[serde(crate = "serde")]
-struct ReclaimCallbackArgs {
-    market_id: u64,
-    oracle_result: String,
-    proof_context: String,
 }
 
 // ── Контракт ─────────────────────────────────────────────────────
@@ -198,7 +148,7 @@ pub struct NearCast {
     outlayer_source_commit: String,
     /// OutLayer контракт (outlayer.testnet или outlayer.near)
     outlayer_contract: AccountId,
-    /// Reclaim Protocol контракт для верификации zkTLS proof'ов
+    /// Reclaim Protocol контракт (deprecated, сохраняем для совместимости Borsh)
     reclaim_contract: AccountId,
 }
 
@@ -221,9 +171,194 @@ impl Default for NearCast {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// ON-CHAIN ЛОГИКА ОПРЕДЕЛЕНИЯ ПОБЕДИТЕЛЯ
+//
+// Раньше это было в TEE Worker — теперь выполняется в контракте.
+// Контракт знает outcomes рынка и получает сырые данные из ESPN.
+// ══════════════════════════════════════════════════════════════════
+
+/// Нечёткое совпадение: проверяем что одна строка содержит другую
+fn fuzzy_match(outcome: &str, espn_name: &str) -> bool {
+    if outcome.is_empty() || espn_name.is_empty() {
+        return false;
+    }
+    let o = outcome.to_lowercase();
+    let e = espn_name.to_lowercase();
+    // Точное совпадение
+    if o == e {
+        return true;
+    }
+    // Одно содержит другое (напр. "Olympiacos" содержится в "Olympiacos FC")
+    if o.contains(&e) || e.contains(&o) {
+        return true;
+    }
+    // Совпадение слов длиной >= 4 символа (напр. "Leverkusen" vs "Bayer Leverkusen")
+    let o_words: Vec<&str> = o.split_whitespace().collect();
+    let e_words: Vec<&str> = e.split_whitespace().collect();
+    for ow in &o_words {
+        if ow.len() >= 4 {
+            for ew in &e_words {
+                if ow == ew {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Winner: 3-way (с ничьёй — футбол) или 2-way (баскетбол, теннис)
+/// Матчим outcomes по именам команд из ESPN, а не по позиции в массиве.
+fn resolve_winner(
+    outcomes: &[String],
+    home: i32,
+    away: i32,
+    home_name: &str,
+    away_name: &str,
+) -> (i32, String) {
+    if outcomes.len() == 3 {
+        // Находим индексы по именам ESPN команд
+        let draw_idx = outcomes.iter().position(|o| {
+            let lower = o.to_lowercase();
+            lower == "draw" || lower == "ничья"
+        });
+        let home_idx = outcomes.iter().position(|o| {
+            Some(outcomes.iter().position(|x| x == o).unwrap()) != draw_idx
+                && fuzzy_match(o, home_name)
+        });
+        let away_idx = outcomes.iter().position(|o| {
+            Some(outcomes.iter().position(|x| x == o).unwrap()) != draw_idx
+                && fuzzy_match(o, away_name)
+        });
+
+        // Fallback: если не удалось найти по имени, берём оставшиеся по порядку
+        let non_draw: Vec<usize> = (0..3).filter(|&i| Some(i) != draw_idx).collect();
+        let home_idx = home_idx.unwrap_or(non_draw[0]);
+        let away_idx = away_idx.unwrap_or(non_draw[1]);
+
+        if home > away {
+            (
+                home_idx as i32,
+                format!("{} wins {}:{}", outcomes[home_idx], home, away),
+            )
+        } else if home < away {
+            (
+                away_idx as i32,
+                format!("{} wins {}:{}", outcomes[away_idx], away, home),
+            )
+        } else if let Some(di) = draw_idx {
+            (di as i32, format!("Draw {}:{}", home, away))
+        } else {
+            (-1, format!("Draw {}:{} but no Draw outcome", home, away))
+        }
+    } else if outcomes.len() == 2 {
+        // 2-way: матчим по именам ESPN команд
+        let home_idx = outcomes
+            .iter()
+            .position(|o| fuzzy_match(o, home_name));
+        let away_idx = outcomes
+            .iter()
+            .position(|o| fuzzy_match(o, away_name));
+
+        let home_idx = home_idx.unwrap_or(0);
+        let away_idx = away_idx.unwrap_or(1);
+
+        if home > away {
+            (
+                home_idx as i32,
+                format!("{} wins {}:{}", outcomes[home_idx], home, away),
+            )
+        } else if home < away {
+            (
+                away_idx as i32,
+                format!("{} wins {}:{}", outcomes[away_idx], home, away),
+            )
+        } else {
+            (-1, format!("Draw {}:{} in 2-way market", home, away))
+        }
+    } else {
+        (-1, "Invalid outcomes count for winner".to_string())
+    }
+}
+
+/// Over/Under: outcomes ["Over X.5", "Under X.5"]
+fn resolve_over_under(outcomes: &[String], home: i32, away: i32) -> (i32, String) {
+    let total = home + away;
+    // Извлекаем порог из названия первого исхода (напр. "Over 2.5" → 2.5)
+    let threshold = outcomes
+        .first()
+        .and_then(|o| {
+            o.split_whitespace()
+                .find_map(|word| word.parse::<f64>().ok())
+        })
+        .unwrap_or(2.5);
+
+    if (total as f64) > threshold {
+        (
+            0,
+            format!("Total {}>{} ({}:{})", total, threshold, home, away),
+        )
+    } else {
+        (
+            1,
+            format!("Total {}<{} ({}:{})", total, threshold, home, away),
+        )
+    }
+}
+
+/// Both teams to score: [Yes, No]
+fn resolve_both_score(home: i32, away: i32) -> (i32, String) {
+    if home > 0 && away > 0 {
+        (0, format!("Both scored ({}:{})", home, away))
+    } else {
+        (1, format!("Not both scored ({}:{})", home, away))
+    }
+}
+
+/// Определяет winning_outcome из сырых данных ESPN + метаданных рынка
+fn determine_winner(
+    market: &Market,
+    espn: &EspnResult,
+) -> (i32, f64, String) {
+    if espn.event_status != "final" {
+        return (-1, 0.0, format!("Event not completed (status: {})", espn.event_status));
+    }
+
+    if !espn.error.is_empty() {
+        return (-1, 0.0, format!("ESPN error: {}", espn.error));
+    }
+
+    if espn.home_score < 0 || espn.away_score < 0 {
+        return (-1, 0.0, "Could not parse scores from ESPN".to_string());
+    }
+
+    let (winning_outcome, reasoning) = match market.market_type.as_str() {
+        "winner" => resolve_winner(
+            &market.outcomes,
+            espn.home_score,
+            espn.away_score,
+            &espn.home_team,
+            &espn.away_team,
+        ),
+        "over-under" => resolve_over_under(
+            &market.outcomes,
+            espn.home_score,
+            espn.away_score,
+        ),
+        "both-score" => resolve_both_score(espn.home_score, espn.away_score),
+        _ => (-1, format!("Unknown market type: {}", market.market_type)),
+    };
+
+    let confidence = if winning_outcome >= 0 { 1.0 } else { 0.0 };
+    (winning_outcome, confidence, reasoning)
+}
+
+// ══════════════════════════════════════════════════════════════════
+
 #[near]
 impl NearCast {
-    /// Инициализация контракта (ignore_state — для миграции с JS-контракта)
+    /// Инициализация контракта (ignore_state — для миграции)
     #[init(ignore_state)]
     pub fn new(oracle: Option<AccountId>) -> Self {
         let owner = env::predecessor_account_id();
@@ -432,7 +567,7 @@ impl NearCast {
     //
     // Кто угодно может вызвать request_resolution с депозитом 0.1 NEAR.
     // Контракт вызовет OutLayer, WASM Worker в TEE получит счёт из ESPN,
-    // и контракт автоматически разрешит рынок.
+    // и контракт ON-CHAIN определит победителя по именам команд.
     // ══════════════════════════════════════════════════════════════
 
     /// Permissionless: кто угодно вызывает для рынков с ESPN данными
@@ -464,13 +599,11 @@ impl NearCast {
             "Время разрешения ещё не наступило"
         );
 
-        // Формируем входные данные для WASM Worker
+        // Входные данные для Worker — только ESPN координаты
         let worker_input = WorkerInput {
             espn_event_id: market.espn_event_id.clone(),
             sport: market.sport.clone(),
             league: market.league.clone(),
-            outcomes: market.outcomes.clone(),
-            market_type: market.market_type.clone(),
         };
         let input_data = serde_json::to_string(&worker_input).unwrap();
 
@@ -523,7 +656,7 @@ impl NearCast {
             )
     }
 
-    /// Callback от OutLayer — обрабатывает результат TEE
+    /// Callback от OutLayer — парсит сырые данные ESPN, определяет победителя ON-CHAIN
     #[private]
     pub fn on_resolution_result(&mut self, market_id: u64) -> String {
         assert_eq!(
@@ -532,28 +665,51 @@ impl NearCast {
             "Ожидается один результат"
         );
 
-        let result = env::promise_result_checked(0, 1_000_000); // макс 1MB результат
+        let result = env::promise_result_checked(0, 1_000_000);
         match result {
             Ok(data) => {
                 let result_str =
                     String::from_utf8(data).unwrap_or_else(|_| "invalid utf8".to_string());
 
-                match serde_json::from_str::<OracleResult>(&result_str) {
-                    Ok(oracle_result) => {
-                        self.apply_resolution(market_id, &oracle_result);
+                match serde_json::from_str::<EspnResult>(&result_str) {
+                    Ok(espn_result) => {
+                        // Получаем рынок для доступа к outcomes и market_type
+                        let market = match self.markets.get(&market_id) {
+                            Some(m) => m.clone(),
+                            None => {
+                                log!("OutLayer: рынок #{} не найден", market_id);
+                                return format!("Market #{} not found", market_id);
+                            }
+                        };
+
+                        // Определяем победителя ON-CHAIN
+                        let (winning_outcome, confidence, reasoning) =
+                            determine_winner(&market, &espn_result);
+
+                        self.apply_resolution(
+                            market_id,
+                            winning_outcome,
+                            confidence,
+                            &reasoning,
+                            &espn_result.event_status,
+                            espn_result.home_score,
+                            espn_result.away_score,
+                        );
+
                         log!(
                             "OutLayer: рынок #{} — исход={}, счёт={}:{}, {}",
                             market_id,
-                            oracle_result.winning_outcome,
-                            oracle_result.home_score,
-                            oracle_result.away_score,
-                            oracle_result.reasoning
+                            winning_outcome,
+                            espn_result.home_score,
+                            espn_result.away_score,
+                            reasoning
                         );
                         format!(
-                            "Resolved: outcome={}, score={}:{}",
-                            oracle_result.winning_outcome,
-                            oracle_result.home_score,
-                            oracle_result.away_score
+                            "Resolved: outcome={}, score={}:{}, {}",
+                            winning_outcome,
+                            espn_result.home_score,
+                            espn_result.away_score,
+                            reasoning
                         )
                     }
                     Err(e) => {
@@ -573,8 +729,17 @@ impl NearCast {
         }
     }
 
-    /// Применяет результат OutLayer к рынку
-    fn apply_resolution(&mut self, market_id: u64, result: &OracleResult) {
+    /// Применяет результат к рынку
+    fn apply_resolution(
+        &mut self,
+        market_id: u64,
+        winning_outcome: i32,
+        confidence: f64,
+        reasoning: &str,
+        event_status: &str,
+        home_score: i32,
+        away_score: i32,
+    ) {
         let mut market = match self.markets.get(&market_id) {
             Some(m) => m.clone(),
             None => return,
@@ -584,192 +749,41 @@ impl NearCast {
             return;
         }
 
-        if result.event_status != "final" {
+        if event_status != "final" {
             log!(
                 "OutLayer: матч не завершён для рынка #{} (status: {})",
                 market_id,
-                result.event_status
+                event_status
             );
             return;
         }
 
-        if result.winning_outcome == -1 || result.confidence < 0.3 {
+        if winning_outcome == -1 || confidence < 0.3 {
             market.resolved_outcome = -2;
             market.status = "voided".to_string();
             self.markets.insert(market_id, market);
             log!(
                 "Рынок #{} аннулирован через OutLayer: {}",
                 market_id,
-                result.reasoning
+                reasoning
             );
-        } else if result.winning_outcome >= 0
-            && (result.winning_outcome as usize) < market.outcomes.len()
+        } else if winning_outcome >= 0
+            && (winning_outcome as usize) < market.outcomes.len()
         {
-            market.resolved_outcome = result.winning_outcome;
+            market.resolved_outcome = winning_outcome;
             market.status = "resolved".to_string();
 
-            let outcome_name = market.outcomes[result.winning_outcome as usize].clone();
+            let outcome_name = market.outcomes[winning_outcome as usize].clone();
             self.markets.insert(market_id, market);
             log!(
                 "Рынок #{} разрешён через OutLayer: исход #{} (\"{}\") | {}:{} | {}",
                 market_id,
-                result.winning_outcome,
+                winning_outcome,
                 outcome_name,
-                result.home_score,
-                result.away_score,
-                result.reasoning
+                home_score,
+                away_score,
+                reasoning
             );
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════
-    // RECLAIM zkTLS — альтернативное разрешение через zkFetch proof
-    //
-    // Бэкенд генерирует zkFetch proof ESPN API, вычисляет winning_outcome,
-    // и отправляет proof + oracle_result в контракт.
-    // Контракт верифицирует proof через reclaim-protocol.testnet,
-    // затем применяет результат через apply_resolution.
-    // ══════════════════════════════════════════════════════════════
-
-    /// Разрешение рынка через Reclaim zkTLS proof
-    pub fn resolve_with_reclaim_proof(
-        &mut self,
-        market_id: u64,
-        proof: ReclaimProof,
-        oracle_result: String,
-    ) -> Promise {
-        let market = self
-            .markets
-            .get(&market_id)
-            .expect("Рынок не найден")
-            .clone();
-        assert!(
-            !market.espn_event_id.is_empty(),
-            "Рынок не спортивный (нет espn_event_id)"
-        );
-        assert!(
-            market.status == "active" || market.status == "closed",
-            "Рынок уже разрешён или аннулирован"
-        );
-
-        let now = env::block_timestamp();
-        assert!(
-            now >= market.resolution_date,
-            "Время разрешения ещё не наступило"
-        );
-
-        // Проверяем что proof относится к нужному ESPN событию
-        assert!(
-            proof.claim_info.parameters.contains(&market.espn_event_id),
-            "Proof не относится к данному ESPN событию"
-        );
-
-        let callback_args = ReclaimCallbackArgs {
-            market_id,
-            oracle_result,
-            proof_context: proof.claim_info.context.clone(),
-        };
-
-        log!(
-            "Reclaim zkTLS: запрос верификации для рынка #{} (ESPN: {})",
-            market_id,
-            market.espn_event_id
-        );
-
-        // Cross-contract call: reclaim-protocol.testnet → verify_proof → callback
-        Promise::new(self.reclaim_contract.clone())
-            .function_call(
-                "verify_proof".to_string(),
-                serde_json::to_vec(&serde_json::json!({ "proof": proof })).unwrap(),
-                NearToken::from_yoctonear(0),
-                GAS_FOR_RECLAIM_VERIFY,
-            )
-            .then(
-                Promise::new(env::current_account_id()).function_call(
-                    "on_reclaim_verified".to_string(),
-                    serde_json::to_vec(&callback_args).unwrap(),
-                    NearToken::from_yoctonear(0),
-                    GAS_FOR_RECLAIM_CALLBACK,
-                ),
-            )
-    }
-
-    /// Callback после верификации Reclaim proof
-    #[private]
-    pub fn on_reclaim_verified(
-        &mut self,
-        market_id: u64,
-        oracle_result: String,
-        proof_context: String,
-    ) -> String {
-        assert_eq!(
-            env::promise_results_count(),
-            1,
-            "Ожидается один результат"
-        );
-
-        let result = env::promise_result_checked(0, 1_000_000);
-        match result {
-            Ok(_) => {
-                // Proof верифицирован on-chain — парсим OracleResult
-                match serde_json::from_str::<OracleResult>(&oracle_result) {
-                    Ok(parsed_result) => {
-                        // Cross-check: счёт из proof context должен совпадать
-                        if let Ok(ctx) = serde_json::from_str::<serde_json::Value>(&proof_context)
-                        {
-                            if let Some(extracted) = ctx.get("extractedParameters") {
-                                if let (Some(home), Some(away)) = (
-                                    extracted
-                                        .get("home_score")
-                                        .and_then(|v| v.as_str())
-                                        .and_then(|s| s.parse::<i32>().ok()),
-                                    extracted
-                                        .get("away_score")
-                                        .and_then(|v| v.as_str())
-                                        .and_then(|s| s.parse::<i32>().ok()),
-                                ) {
-                                    assert!(
-                                        home == parsed_result.home_score
-                                            && away == parsed_result.away_score,
-                                        "Счёт из proof не совпадает с oracle_result"
-                                    );
-                                }
-                            }
-                        }
-
-                        self.apply_resolution(market_id, &parsed_result);
-                        log!(
-                            "Reclaim zkTLS: рынок #{} — исход={}, счёт={}:{}, {}",
-                            market_id,
-                            parsed_result.winning_outcome,
-                            parsed_result.home_score,
-                            parsed_result.away_score,
-                            parsed_result.reasoning
-                        );
-                        format!(
-                            "Resolved via zkTLS: outcome={}, score={}:{}",
-                            parsed_result.winning_outcome,
-                            parsed_result.home_score,
-                            parsed_result.away_score
-                        )
-                    }
-                    Err(e) => {
-                        log!(
-                            "Reclaim: ошибка парсинга OracleResult для рынка #{}: {}",
-                            market_id,
-                            e
-                        );
-                        format!("Parse error: {}", e)
-                    }
-                }
-            }
-            Err(_) => {
-                log!(
-                    "Reclaim: верификация proof не удалась для рынка #{}",
-                    market_id
-                );
-                "Reclaim proof verification failed".to_string()
-            }
         }
     }
 
@@ -864,16 +878,6 @@ impl NearCast {
     // ══════════════════════════════════════════════════════════════
     // АДМИНИСТРАТИВНЫЕ МЕТОДЫ
     // ══════════════════════════════════════════════════════════════
-
-    /// Настройка Reclaim Protocol контракта
-    pub fn set_reclaim_config(&mut self, reclaim_contract: AccountId) {
-        assert!(
-            env::predecessor_account_id() == self.owner,
-            "Только владелец"
-        );
-        self.reclaim_contract = reclaim_contract.clone();
-        log!("Reclaim настроен: contract={}", reclaim_contract);
-    }
 
     /// Настройка OutLayer — GitHub repo с WASM Worker
     pub fn set_outlayer_config(
@@ -1006,7 +1010,6 @@ impl NearCast {
             "oracle": self.oracle,
             "outlayerSourceRepo": self.outlayer_source_repo,
             "outlayerContract": self.outlayer_contract,
-            "reclaimContract": self.reclaim_contract,
         })
     }
 
