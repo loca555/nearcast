@@ -768,7 +768,9 @@ function MarketDetail({ market, account, balance, userBets, prevPage, onBack, on
                   </div>
                 </div>
                 <div style={{ fontSize: 12, color: th.muted, marginTop: 6 }}>
-                  Triggered via OutLayer TEE. The market will update automatically once verified.
+                  {resolutionPending?.method === "tls"
+                    ? "Triggered via TLS Oracle (MPC-TLS + ZK). The market will update automatically once verified."
+                    : "Triggered via OutLayer TEE. The market will update automatically once verified."}
                 </div>
               </>
             ) : (
@@ -779,20 +781,38 @@ function MarketDetail({ market, account, balance, userBets, prevPage, onBack, on
                 <div style={{ fontSize: 12, color: th.muted, marginBottom: 12 }}>
                   Anyone can trigger market resolution via ESPN data
                 </div>
-                <button
-                  style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1 }}
-                  disabled={resolving}
-                  onClick={async () => {
-                    setResolving(true); setMessage("");
-                    try {
-                      await requestResolution(market.id);
-                      markResolutionPending("outlayer");
-                    } catch (err) { setMessage(`Error: ${err.message}`); }
-                    setResolving(false);
-                  }}
-                >
-                  {resolving ? "Sending..." : "Resolve via TEE"}
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    style={{ ...S.primaryBtn, background: "#10b981", opacity: resolving ? 0.5 : 1, flex: 1 }}
+                    disabled={resolving}
+                    onClick={async () => {
+                      setResolving(true); setMessage("");
+                      try {
+                        await requestResolution(market.id);
+                        markResolutionPending("outlayer");
+                      } catch (err) { setMessage(`Error: ${err.message}`); }
+                      setResolving(false);
+                    }}
+                  >
+                    {resolving ? "Sending..." : "Resolve via TEE"}
+                  </button>
+                  <button
+                    style={{ ...S.primaryBtn, background: "#6366f1", opacity: resolving ? 0.5 : 1, flex: 1 }}
+                    disabled={resolving}
+                    onClick={async () => {
+                      setResolving(true); setMessage("");
+                      try {
+                        const resp = await fetch(`/api/trigger-tls-resolution/${market.id}`, { method: "POST" });
+                        const data = await resp.json();
+                        if (!resp.ok) throw new Error(data.error || data.message || "TLS Oracle error");
+                        markResolutionPending("tls");
+                      } catch (err) { setMessage(`Error: ${err.message}`); }
+                      setResolving(false);
+                    }}
+                  >
+                    {resolving ? "Sending..." : "Resolve via TLS Oracle"}
+                  </button>
+                </div>
               </>
             )}
           </div>
