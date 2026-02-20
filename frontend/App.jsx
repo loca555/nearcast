@@ -337,7 +337,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/markets/${id}`);
       setSelectedMarket(await res.json());
-      setPrevPage(page);
+      if (page !== "market") setPrevPage(page);
       setPage("market");
     } catch (err) {
       console.error("Market load error:", err);
