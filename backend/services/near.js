@@ -261,8 +261,10 @@ export async function submitTlsAttestation(proofData) {
       proof_b: proofData.proofB,
       proof_c: proofData.proofC,
       public_signals: proofData.publicSignals,
+      notary_signature: proofData.notarySignature,
+      notary_sig_v: proofData.notarySigV,
     },
-    gas: "200000000000000", // 200 TGas (ZK verify)
+    gas: "200000000000000", // 200 TGas (ZK verify + ecrecover)
     attachedDeposit: "50000000000000000000000", // 0.05 NEAR (storage)
   });
 
