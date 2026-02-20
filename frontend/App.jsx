@@ -55,6 +55,8 @@ const TRANSLATIONS = {
       bets: "Bets", markets: "Markets", totalBet: "Total Bet (NEAR)",
       noBets: "You have no bets yet", outcome: "Outcome",
       claimed: "✓ Claimed", pending: "Pending",
+      won: "Won", lost: "Lost", voided: "Voided",
+      pnl: "PnL (NEAR)", hideCompleted: "Hide completed",
       connectWallet: "Connect your wallet", connectNearWallet: "Connect NEAR Wallet",
       claimAll: "Claim All Winnings", claimingAll: "Claiming...", allClaimed: "All winnings claimed!",
     },
@@ -1397,6 +1399,7 @@ function Portfolio({ account, userBets, markets: externalMarkets, balance, onRef
   const [claimingAll, setClaimingAll] = useState(false);
   const [claimMsg, setClaimMsg] = useState("");
   const [allMarkets, setAllMarkets] = useState([]);
+  const [hideCompleted, setHideCompleted] = useState(true);
 
   // Загружаем ВСЕ рынки для портфолио (независимо от фильтра главной)
   useEffect(() => {
@@ -1432,6 +1435,31 @@ function Portfolio({ account, userBets, markets: externalMarkets, balance, onRef
   const marketIds = Object.keys(betsByMarket).map(Number);
   const totalBet = validBets.reduce((sum, b) => sum + BigInt(b.amount), 0n);
 
+  // Расчёт PnL для каждой ставки
+  const getBetPnl = (bet, market) => {
+    if (!market) return { status: "pending", pnl: 0 };
+    if (market.status === "resolved") {
+      const won = market.resolvedOutcome === bet.outcome;
+      const amountNear = Number(BigInt(bet.amount)) / ONE_NEAR;
+      if (won) {
+        const totalPool = Number(BigInt(market.totalPool || "0")) / ONE_NEAR;
+        const winPool = Number(BigInt(market.outcomePools?.[bet.outcome] || "0")) / ONE_NEAR;
+        const pnl = winPool > 0 ? (amountNear * totalPool / winPool) - amountNear : 0;
+        return { status: "won", pnl };
+      }
+      return { status: "lost", pnl: -amountNear };
+    }
+    if (market.status === "voided") return { status: "voided", pnl: 0 };
+    return { status: "pending", pnl: 0 };
+  };
+
+  // PnL по всем ставкам
+  let totalPnl = 0;
+  for (const bet of validBets) {
+    const market = markets.find((m) => m.id === bet.marketId);
+    totalPnl += getBetPnl(bet, market).pnl;
+  }
+
   // Рынки с невостребованными выигрышами
   const claimableMarketIds = marketIds.filter((mid) => {
     const market = markets.find((m) => m.id === mid);
@@ -1442,11 +1470,27 @@ function Portfolio({ account, userBets, markets: externalMarkets, balance, onRef
     return false;
   });
 
+  // Определяем «завершённые» рынки (делать нечего — проигранные, или выигранные+заклеймленные)
+  const isMarketCompleted = (mid) => {
+    const market = markets.find((m) => m.id === mid);
+    const bets = betsByMarket[mid];
+    if (!market) return false;
+    if (market.status === "resolved") {
+      const hasUnclaimedWin = bets.some((b) => b.outcome === market.resolvedOutcome && !b.claimed);
+      return !hasUnclaimedWin; // проигранные ИЛИ уже заклеймленные
+    }
+    if (market.status === "voided") {
+      return bets.every((b) => b.claimed); // все рефанды забраны
+    }
+    return false;
+  };
+
+  const displayMarketIds = hideCompleted ? marketIds.filter((mid) => !isMarketCompleted(mid)) : marketIds;
+
   const handleClaimAll = async () => {
     setClaimingAll(true); setClaimMsg("");
     let ok = 0, fail = 0;
     for (const mid of claimableMarketIds) {
-      const market = markets.find((m) => m.id === mid);
       try {
         await claimWinnings(mid);
         ok++;
@@ -1481,29 +1525,39 @@ function Portfolio({ account, userBets, markets: externalMarkets, balance, onRef
           <div style={{ ...S.statValue, fontSize: mob ? 18 : 24 }}>{formatNear(totalBet.toString())}</div>
           <div style={S.statLabel}>{t.portfolio.totalBet}</div>
         </div>
+        <div style={{ ...S.statCard, ...(mob ? { minWidth: 0 } : {}) }}>
+          <div style={{ ...S.statValue, fontSize: mob ? 18 : 24, color: totalPnl > 0 ? th.successText : totalPnl < 0 ? th.errorText : th.accent }}>
+            {totalPnl > 0 ? "+" : ""}{totalPnl.toFixed(2)}
+          </div>
+          <div style={S.statLabel}>{t.portfolio.pnl}</div>
+        </div>
       </div>
 
-      {claimableMarketIds.length > 0 && (
-        <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 14, color: th.muted }}>
+          <input type="checkbox" checked={hideCompleted} onChange={(e) => setHideCompleted(e.target.checked)} />
+          {t.portfolio.hideCompleted}
+        </label>
+
+        {claimableMarketIds.length > 0 && (
           <button style={{ ...S.primaryBtn, background: "#22c55e", opacity: claimingAll ? 0.5 : 1 }}
             onClick={handleClaimAll} disabled={claimingAll}>
             {claimingAll ? t.portfolio.claimingAll : `${t.portfolio.claimAll} (${claimableMarketIds.length})`}
           </button>
-          {claimMsg && (
-            <span style={{ fontSize: 14, color: claimMsg.includes(t.error) ? th.errorText : th.successText }}>{claimMsg}</span>
-          )}
-        </div>
-      )}
+        )}
+        {claimMsg && (
+          <span style={{ fontSize: 14, color: claimMsg.includes(t.error) ? th.errorText : th.successText }}>{claimMsg}</span>
+        )}
+      </div>
 
-      {marketIds.length === 0 && (
+      {displayMarketIds.length === 0 && (
         <div style={{ textAlign: "center", color: th.dimmed, padding: 40 }}>{t.portfolio.noBets}</div>
       )}
 
-      {marketIds.map((mid) => {
+      {displayMarketIds.map((mid) => {
         const bets = betsByMarket[mid];
         const market = markets.find((m) => m.id === mid);
         const marketQuestion = market?.question || `Market #${mid}`;
-        const marketStatus = market?.status || "?";
         const isClaimable = claimableMarketIds.includes(mid);
 
         return (
@@ -1511,17 +1565,31 @@ function Portfolio({ account, userBets, markets: externalMarkets, balance, onRef
             onMouseEnter={(e) => (e.currentTarget.style.borderColor = th.accentBg)}
             onMouseLeave={(e) => (e.currentTarget.style.borderColor = isClaimable ? "#22c55e44" : th.cardBorder)}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={S.badge(market ? getStatusColor(market) : (STATUS_COLORS[marketStatus] || "#94a3b8"))}>{getStatusLabel(market || { status: marketStatus }, t)}</span>
+              <span style={S.badge(market ? getStatusColor(market) : "#94a3b8")}>{getStatusLabel(market || { status: "?" }, t)}</span>
               {isClaimable && <span style={S.badge("#22c55e")}>{t.market.claimWinnings}</span>}
             </div>
             <div style={S.cardTitle}>{marketQuestion}</div>
-            {bets.map((bet, i) => (
-              <div key={i} style={{ fontSize: mob ? 12 : 13, color: th.muted, display: "flex", gap: mob ? 6 : 12, marginTop: 4, flexWrap: "wrap" }}>
-                <span>{t.portfolio.outcome}: <b style={{ color: th.text }}>{market?.outcomes?.[bet.outcome] || `#${bet.outcome}`}</b></span>
-                <span>{formatNear(bet.amount)} NEAR</span>
-                <span>{bet.claimed ? t.portfolio.claimed : t.portfolio.pending}</span>
-              </div>
-            ))}
+            {bets.map((bet, i) => {
+              const { status: betStatus, pnl } = getBetPnl(bet, market);
+              const statusColor = betStatus === "won" ? th.successText : betStatus === "lost" ? th.errorText : betStatus === "voided" ? "#f59e0b" : th.muted;
+              const statusLabel = betStatus === "won" ? (bet.claimed ? t.portfolio.claimed : t.portfolio.won)
+                : betStatus === "lost" ? t.portfolio.lost
+                : betStatus === "voided" ? (bet.claimed ? t.portfolio.claimed : t.portfolio.voided)
+                : t.portfolio.pending;
+
+              return (
+                <div key={i} style={{ fontSize: mob ? 12 : 13, color: th.muted, display: "flex", gap: mob ? 6 : 12, marginTop: 4, flexWrap: "wrap", alignItems: "center" }}>
+                  <span>{t.portfolio.outcome}: <b style={{ color: th.text }}>{market?.outcomes?.[bet.outcome] || `#${bet.outcome}`}</b></span>
+                  <span>{formatNear(bet.amount)} NEAR</span>
+                  <span style={{ color: statusColor, fontWeight: 600 }}>{statusLabel}</span>
+                  {pnl !== 0 && (
+                    <span style={{ color: pnl > 0 ? th.successText : th.errorText, fontWeight: 600 }}>
+                      {pnl > 0 ? "+" : ""}{pnl.toFixed(2)} NEAR
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })}
