@@ -217,23 +217,63 @@ impl Default for NearCast {
 // Контракт знает outcomes рынка и получает сырые данные из ESPN.
 // ══════════════════════════════════════════════════════════════════
 
+/// НОД для u128
+fn gcd(mut a: u128, mut b: u128) -> u128 {
+    while b != 0 {
+        let t = b;
+        b = a % b;
+        a = t;
+    }
+    a
+}
+
 /// Безопасное умножение и деление: a * b / c без overflow u128
-/// Используем промежуточное деление чтобы результат поместился в u128
+/// Сначала сокращаем через GCD, потом разбиваем если нужно
 fn safe_mul_div(a: u128, b: u128, c: u128) -> u128 {
-    // a * b / c = (a / c) * b + (a % c) * b / c
-    // Если (a % c) * b тоже переполняет, делим ещё раз
-    let whole = (a / c) * b;
-    let rem = a % c;
-    // rem < c, но rem * b может переполнить если оба > ~10^19
-    // Проверяем: если rem * b безопасно — считаем напрямую
-    if rem <= u128::MAX / b.max(1) {
-        whole + rem * b / c
+    assert!(c > 0, "Деление на ноль");
+    if a == 0 || b == 0 {
+        return 0;
+    }
+
+    // Попытка прямого умножения
+    if let Some(product) = a.checked_mul(b) {
+        return product / c;
+    }
+
+    // Сокращаем a/c и b/c через GCD
+    let g1 = gcd(a, c);
+    let a_r = a / g1;
+    let c_r = c / g1;
+    let g2 = gcd(b, c_r);
+    let b_r = b / g2;
+    let c_rr = c_r / g2;
+
+    // После сокращения пробуем снова
+    if let Some(product) = a_r.checked_mul(b_r) {
+        return product / c_rr;
+    }
+
+    // Разбиваем: a_r * b_r / c_rr = q * b_r + r * b_r / c_rr
+    let q = a_r / c_rr;
+    let r = a_r % c_rr;
+    // q * b_r безопасно: q * b_r <= a_r * b_r / c_rr = результат <= u128::MAX
+    let main = q * b_r;
+
+    if let Some(rb) = r.checked_mul(b_r) {
+        main + rb / c_rr
     } else {
-        // Второй уровень: (rem * b) / c через деление rem
-        // rem * b / c = rem * (b / c) + rem * (b % c) / c
-        let b_div = b / c;
-        let b_rem = b % c;
-        whole + rem * b_div + rem * b_rem / c
+        // Переворачиваем: r * b_r / c_rr = (b_r / c_rr) * r + (b_r % c_rr) * r / c_rr
+        let q2 = b_r / c_rr;
+        let r2 = b_r % c_rr;
+        // q2 * r < b_r (безопасно), r2 * r < c_rr^2
+        let part1 = q2 * r;
+        let part2 = r2.checked_mul(r).map(|v| v / c_rr).unwrap_or_else(|| {
+            // r2 < c_rr, r < c_rr — ещё раз через GCD
+            let g3 = gcd(r2, c_rr);
+            let g4 = gcd(r, c_rr / g3);
+            (r2 / g3) * (r / g4) / (c_rr / g3 / g4)
+        });
+        main + part1 + part2
     }
 }
 
