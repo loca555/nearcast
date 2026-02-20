@@ -903,9 +903,9 @@ impl NearCast {
             "attestation_id": attestation_id,
             "expected_home_score": home_score,
             "expected_away_score": away_score,
-            "expected_home_team": home_team,
-            "expected_away_team": away_team,
-            "expected_event_status": event_status,
+            "_expected_home_team": home_team,
+            "_expected_away_team": away_team,
+            "_expected_event_status": event_status,
         });
 
         // Cross-contract view call к TLS Oracle: get_attestation(id)
