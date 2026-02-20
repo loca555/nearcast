@@ -22,3 +22,8 @@ worker/target/
 на-будущее.txt
 check-tx.mjs
 resolve-all.mjs
+
+# Бэкапы
+*.backup-*
+*-backup-*
+src-backup-*/
