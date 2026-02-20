@@ -276,7 +276,7 @@ export async function submitTlsAttestation(proofData) {
     result.receipts_outcome
       ?.flatMap((r) => r.outcome?.logs || [])
       .join("\n") || "";
-  const idMatch = logs.match(/id:\s*(\d+)/);
+  const idMatch = logs.match(/#(\d+)/) || logs.match(/id:\s*(\d+)/);
   const attestationId = idMatch ? parseInt(idMatch[1]) : null;
 
   return { txHash, attestationId };
