@@ -20,3 +20,5 @@ contract-rs/target/
 worker/target/
 
 на-будущее.txt
+check-tx.mjs
+resolve-all.mjs
