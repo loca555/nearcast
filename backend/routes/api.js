@@ -3,6 +3,7 @@
  */
 
 import { Router } from "express";
+import Database from "better-sqlite3";
 import {
   getMarkets,
   getMarket,
@@ -24,9 +25,26 @@ import { getSpendingSummary } from "../services/spending-tracker.js";
 
 const router = Router();
 
+// ── Pending Resolution tracking (cross-device) ──────────────────
+
+let pendingDb = null;
+function getPendingDb() {
+  if (pendingDb) return pendingDb;
+  pendingDb = new Database("nearcast-oracle.db");
+  pendingDb.pragma("journal_mode = WAL");
+  pendingDb.exec(`
+    CREATE TABLE IF NOT EXISTS pending_resolutions (
+      market_id INTEGER PRIMARY KEY,
+      method TEXT NOT NULL DEFAULT 'outlayer',
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  return pendingDb;
+}
+
 // ── Рынки ─────────────────────────────────────────────────────
 
-// Список рынков
+// Список рынков (с pending resolution статусами)
 router.get("/markets", async (req, res, next) => {
   try {
     const { from_index, limit, category, status } = req.query;
@@ -36,6 +54,20 @@ router.get("/markets", async (req, res, next) => {
       category: category || undefined,
       status: status || undefined,
     });
+    // Добавляем pendingResolution к рынкам
+    try {
+      const db = getPendingDb();
+      const pendings = db.prepare("SELECT market_id, method, created_at FROM pending_resolutions").all();
+      const pendingMap = {};
+      const now = Date.now();
+      for (const p of pendings) {
+        const age = now - new Date(p.created_at + "Z").getTime();
+        if (age < 10 * 60 * 1000) pendingMap[p.market_id] = p.method;
+      }
+      for (const m of markets) {
+        if (pendingMap[m.id]) m.pendingResolution = pendingMap[m.id];
+      }
+    } catch { /* не критично */ }
     res.json(markets);
   } catch (err) {
     next(err);
@@ -211,6 +243,51 @@ router.get("/oracle/logs", async (req, res, next) => {
     res.json(logs);
   } catch (err) {
     next(err);
+  }
+});
+
+// ── Pending Resolution (cross-device tracking) ──────────────────
+
+// Отметить что отправлен запрос на разрешение (после on-chain TX)
+router.post("/markets/:id/pending-resolution", (req, res) => {
+  try {
+    const db = getPendingDb();
+    const marketId = parseInt(req.params.id);
+    const method = req.body.method || "outlayer";
+    db.prepare("INSERT OR REPLACE INTO pending_resolutions (market_id, method) VALUES (?, ?)").run(marketId, method);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Проверить статус pending resolution (для cross-device)
+router.get("/markets/:id/pending-resolution", (req, res) => {
+  try {
+    const db = getPendingDb();
+    const marketId = parseInt(req.params.id);
+    const row = db.prepare("SELECT * FROM pending_resolutions WHERE market_id = ?").get(marketId);
+    if (!row) return res.json({ pending: false });
+    // Авто-истечение через 10 минут
+    const createdAt = new Date(row.created_at + "Z").getTime();
+    if (Date.now() - createdAt > 10 * 60 * 1000) {
+      db.prepare("DELETE FROM pending_resolutions WHERE market_id = ?").run(marketId);
+      return res.json({ pending: false });
+    }
+    res.json({ pending: true, method: row.method, createdAt: row.created_at });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Удалить pending (вызывается когда рынок resolved)
+router.delete("/markets/:id/pending-resolution", (req, res) => {
+  try {
+    const db = getPendingDb();
+    db.prepare("DELETE FROM pending_resolutions WHERE market_id = ?").run(parseInt(req.params.id));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

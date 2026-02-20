@@ -21,13 +21,13 @@ import "@near-wallet-selector/modal-ui/styles.css";
 const TRANSLATIONS = {
   en: {
     nav: { markets: "Markets", create: "+ Create", resolved: "Reporting", portfolio: "Portfolio", connect: "Connect" },
-    status: { active: "Active", closed: "In-play", resolution: "Resolution", resolved: "Resolved", voided: "Voided", resolvedWon: (w) => `Resolved: ${w} won` },
+    status: { active: "Active", closed: "In-play", resolution: "Resolution", awaitingTee: "Awaiting TEE", resolved: "Resolved", voided: "Voided", resolvedWon: (w) => `Resolved: ${w} won` },
     stats: { markets: "Markets", volume: "Volume (NEAR)" },
     filters: { all: "All", active: "Active", inPlay: "In-play", needsResolution: "Needs Resolution", awaitingResolution: "Awaiting Resolution", resolved: "Resolved", voided: "Voided" },
     sort: { label: "Sort", endDate: "End Date", volume: "Volume", newest: "Newest" },
     market: {
       pool: "Pool", bets: "Bets", outcomes: "Outcomes", until: "Until", resolution: "Resolution",
-      noMarkets: "No markets yet. Create the first one!", backToMarkets: "← Back to markets",
+      noMarkets: "No markets yet. Create the first one!", backToMarkets: "← Back to markets", backToReporting: "← Back to reporting",
       outcomesTitle: "Outcomes", available: "Available", amountNear: "Amount NEAR",
       placeBet: "Place Bet", selectOutcome: "Select an outcome", minBet: "Minimum 0.1 NEAR",
       betAccepted: "Bet placed!", claimWinnings: "Claim Winnings", claimRefund: "Claim Refund",
@@ -131,6 +131,7 @@ function getStyles(th) {
 
 const STATUS_COLORS = { active: "#22c55e", closed: "#f59e0b", resolved: "#3b82f6", voided: "#ef4444" };
 const getStatusColor = (m) => {
+  if (m.pendingResolution && isReadyToResolve(m)) return "#f59e0b";
   if (m.status === "closed" && isReadyToResolve(m)) return "#a855f7";
   return STATUS_COLORS[m.status] || "#94a3b8";
 };
@@ -162,6 +163,7 @@ function getStatusLabel(market, t) {
   if (!market) return "—";
   const s = market.status;
   if (s === "active") return t.status.active;
+  if (s === "closed" && market.pendingResolution && isReadyToResolve(market)) return t.status.awaitingTee;
   if (s === "closed") return isReadyToResolve(market) ? t.status.resolution : t.status.closed;
   if (s === "resolved") {
     const idx = market.resolvedOutcome;
@@ -224,6 +226,7 @@ const useApp = () => useContext(AppContext);
 export default function App() {
   const mob = useIsMobile();
   const [page, setPage] = useState("markets");
+  const [prevPage, setPrevPage] = useState("markets");
   const [account, setAccount] = useState(null);
   const [markets, setMarkets] = useState([]);
   const [selectedMarket, setSelectedMarket] = useState(null);
@@ -332,6 +335,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/markets/${id}`);
       setSelectedMarket(await res.json());
+      setPrevPage(page);
       setPage("market");
     } catch (err) {
       console.error("Market load error:", err);
@@ -396,7 +400,8 @@ export default function App() {
           {page === "market" && selectedMarket && (
             <MarketDetail
               market={selectedMarket} account={account} balance={balance} userBets={userBets}
-              onBack={() => { setPage("markets"); loadMarkets(); }}
+              prevPage={prevPage}
+              onBack={() => { setPage(prevPage || "markets"); loadMarkets(); }}
               onRefresh={() => { openMarket(selectedMarket.id); loadBalance(); loadUserBets(); }}
             />
           )}
@@ -607,7 +612,7 @@ function MarketBrowser({ markets, stats, statusFilter, setStatusFilter, sortBy, 
 // ДЕТАЛИ РЫНКА
 // ══════════════════════════════════════════════════════════════
 
-function MarketDetail({ market, account, balance, userBets, onBack, onRefresh }) {
+function MarketDetail({ market, account, balance, userBets, prevPage, onBack, onRefresh }) {
   const { t, th, S, lang, mob } = useApp();
   const [betAmount, setBetAmount] = useState("1");
   const [selectedOutcome, setSelectedOutcome] = useState(null);
@@ -615,24 +620,25 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
   const [message, setMessage] = useState("");
   const [resolving, setResolving] = useState(false);
 
-  // Pending resolution — после отправки TX показываем "Awaiting resolution"
-  const pendingKey = `pendingResolution_${market.id}`;
-  const [resolutionPending, setResolutionPending] = useState(() => {
-    const saved = localStorage.getItem(pendingKey);
-    if (!saved) return null;
-    const data = JSON.parse(saved);
-    // Очищаем через 10 минут (resolution должен завершиться за это время)
-    if (Date.now() - data.timestamp > 10 * 60 * 1000) {
-      localStorage.removeItem(pendingKey);
-      return null;
-    }
-    return data;
-  });
+  // Pending resolution — серверное отслеживание (cross-device)
+  const [resolutionPending, setResolutionPending] = useState(null);
 
-  // Очищаем pending если рынок уже зарезолвлен
+  // При загрузке — проверяем сервер на pending resolution
+  useEffect(() => {
+    if (market.status === "resolved" || market.status === "voided") {
+      setResolutionPending(null);
+      return;
+    }
+    fetch(`/api/markets/${market.id}/pending-resolution`)
+      .then((r) => r.json())
+      .then((data) => { if (data.pending) setResolutionPending({ method: data.method }); })
+      .catch(() => {});
+  }, [market.id, market.status]);
+
+  // Очищаем pending на сервере если рынок зарезолвлен
   useEffect(() => {
     if (resolutionPending && (market.status === "resolved" || market.status === "voided")) {
-      localStorage.removeItem(pendingKey);
+      fetch(`/api/markets/${market.id}/pending-resolution`, { method: "DELETE" }).catch(() => {});
       setResolutionPending(null);
     }
   }, [market.status]);
@@ -645,9 +651,12 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
   }, [resolutionPending]);
 
   const markResolutionPending = (method) => {
-    const data = { method, timestamp: Date.now() };
-    localStorage.setItem(pendingKey, JSON.stringify(data));
-    setResolutionPending(data);
+    setResolutionPending({ method });
+    fetch(`/api/markets/${market.id}/pending-resolution`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ method }),
+    }).catch(() => {});
   };
 
   const totalPool = BigInt(market.totalPool || "0");
@@ -681,7 +690,7 @@ function MarketDetail({ market, account, balance, userBets, onBack, onRefresh })
 
   return (
     <>
-      <button style={S.backBtn} onClick={onBack}>{t.market.backToMarkets}</button>
+      <button style={S.backBtn} onClick={onBack}>{prevPage === "resolved" ? t.market.backToReporting : t.market.backToMarkets}</button>
       <div style={{ ...S.card, cursor: "default" }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
           <span style={S.badge(getStatusColor(market))}>{getStatusLabel(market, t)}</span>
