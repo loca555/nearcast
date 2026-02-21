@@ -9,6 +9,7 @@ import {
   placeBet,
   claimWinnings,
   requestResolution,
+  requestTlsResolution,
   deposit as walletDeposit,
   withdraw as walletWithdraw,
 } from "./near-wallet.js";
@@ -621,6 +622,7 @@ function MarketDetail({ market, account, balance, userBets, prevPage, onBack, on
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [resolving, setResolving] = useState(false);
+  const [tlsStep, setTlsStep] = useState(""); // "proof" | "submit" | "resolve"
 
   // Pending resolution — серверное отслеживание (cross-device)
   const [resolutionPending, setResolutionPending] = useState(null);
@@ -800,17 +802,30 @@ function MarketDetail({ market, account, balance, userBets, prevPage, onBack, on
                     style={{ ...S.primaryBtn, background: "#6366f1", opacity: resolving ? 0.5 : 1, flex: 1 }}
                     disabled={resolving}
                     onClick={async () => {
-                      setResolving(true); setMessage("");
+                      setResolving(true); setMessage(""); setTlsStep("proof");
                       try {
-                        const resp = await fetch(`/api/trigger-tls-resolution/${market.id}`, { method: "POST" });
+                        // 1. Получаем MPC-TLS proof от сервера
+                        const resp = await fetch(`/api/tls-proof/${market.id}`, { method: "POST" });
                         const data = await resp.json();
-                        if (!resp.ok) throw new Error(data.error || data.message || "TLS Oracle error");
+                        if (!resp.ok) throw new Error(data.error || "TLS proof error");
+
+                        // 2-3. Отправляем 2 TX через кошелёк пользователя
+                        await requestTlsResolution(
+                          market.id,
+                          data.proofData,
+                          data.tlsOracleContract,
+                          (step) => setTlsStep(step),
+                        );
                         markResolutionPending("tls");
                       } catch (err) { setMessage(`Error: ${err.message}`); }
-                      setResolving(false);
+                      setResolving(false); setTlsStep("");
                     }}
                   >
-                    {resolving ? "Sending..." : "Resolve via TLS Oracle"}
+                    {!resolving ? "Resolve via TLS Oracle"
+                      : tlsStep === "proof" ? "MPC-TLS proving..."
+                      : tlsStep === "submit" ? "Sign attestation..."
+                      : tlsStep === "resolve" ? "Sign resolution..."
+                      : "Sending..."}
                   </button>
                 </div>
               </>

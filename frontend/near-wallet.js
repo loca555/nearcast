@@ -213,3 +213,88 @@ export async function claimWinnings(marketId) {
   });
 }
 
+// ── TLS Oracle — разрешение через кошелёк пользователя ────────
+
+/**
+ * Полный flow разрешения рынка через TLS Oracle (2 TX через кошелёк):
+ * 1. submit_attestation → TLS Oracle контракт (получаем attestation_id)
+ * 2. resolve_with_tls_attestation → NearCast контракт
+ *
+ * @param {number} marketId - ID рынка
+ * @param {object} proofData - ответ от /prove-espn (proof + подпись)
+ * @param {string} tlsOracleContract - TLS Oracle contract ID
+ * @param {function} onStep - callback для прогресса ("submit" | "resolve")
+ */
+export async function requestTlsResolution(marketId, proofData, tlsOracleContract, onStep) {
+  const wallet = await selector.wallet();
+
+  // Парсим ESPN данные для resolve
+  const espnData = JSON.parse(proofData.responseData);
+
+  // Шаг 1: submit_attestation в TLS Oracle контракт
+  if (onStep) onStep("submit");
+  const submitResult = await wallet.signAndSendTransaction({
+    receiverId: tlsOracleContract,
+    actions: [
+      actionCreators.functionCall(
+        "submit_attestation",
+        {
+          source_url: proofData.sourceUrl,
+          server_name: proofData.serverName,
+          timestamp: proofData.timestamp,
+          response_data: proofData.responseData,
+          proof_a: proofData.proofA,
+          proof_b: proofData.proofB,
+          proof_c: proofData.proofC,
+          public_signals: proofData.publicSignals,
+          notary_signature: proofData.notarySignature,
+          notary_sig_v: proofData.notarySigV,
+        },
+        200_000_000_000_000n, // 200 TGas (ecrecover + ZK verify)
+        nearToYocto(0.05) // 0.05 NEAR storage deposit — попап кошелька
+      ),
+    ],
+  });
+
+  // Извлекаем attestation_id из логов TX
+  const logs = extractLogs(submitResult);
+  const idMatch = logs.match(/#(\d+)/);
+  if (!idMatch) {
+    throw new Error("Не удалось получить attestation_id из TX логов");
+  }
+  const attestationId = parseInt(idMatch[1]);
+
+  // Шаг 2: resolve_with_tls_attestation на NearCast контракте
+  if (onStep) onStep("resolve");
+  const resolveResult = await wallet.signAndSendTransaction({
+    receiverId: contractId,
+    actions: [
+      actionCreators.functionCall(
+        "resolve_with_tls_attestation",
+        {
+          market_id: marketId,
+          attestation_id: attestationId,
+          home_score: espnData.hs,
+          away_score: espnData.as,
+          home_team: espnData.ht,
+          away_team: espnData.at,
+          event_status: espnData.st,
+        },
+        200_000_000_000_000n, // 200 TGas (cross-contract call + callback)
+        0n
+      ),
+    ],
+  });
+
+  return { submitResult, resolveResult, attestationId };
+}
+
+/** Извлечь все логи из результата транзакции wallet selector */
+function extractLogs(txResult) {
+  // wallet selector возвращает разные форматы в зависимости от провайдера
+  const receipts = txResult?.receipts_outcome || txResult?.receiptsOutcome || [];
+  return receipts
+    .flatMap((r) => r?.outcome?.logs || [])
+    .join("\n");
+}
+

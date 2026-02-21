@@ -304,12 +304,60 @@ router.post("/trigger-espn-resolution/:id", async (req, res, next) => {
   }
 });
 
-// Триггер разрешения рынка через TLS Oracle (MPC-TLS + ZK proof)
+// Триггер разрешения рынка через TLS Oracle (MPC-TLS + ZK proof) — серверный кошелёк
 router.post("/trigger-tls-resolution/:id", async (req, res, next) => {
   try {
     const { triggerTlsResolution } = await import("../services/tls-relayer.js");
     const result = await triggerTlsResolution(parseInt(req.params.id));
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Получить ESPN proof для клиентского TLS resolve (без submit — пользователь отправляет сам)
+router.post("/tls-proof/:id", async (req, res, next) => {
+  try {
+    const market = await getMarket(parseInt(req.params.id));
+    if (!market) return res.status(404).json({ error: "Рынок не найден" });
+
+    const espnId = market.espn_event_id || market.espnEventId;
+    if (!espnId) return res.status(400).json({ error: "Рынок не спортивный (нет ESPN ID)" });
+
+    const status = market.status;
+    if (status === "resolved" || status === "voided") {
+      return res.status(400).json({ error: `Рынок уже ${status}` });
+    }
+
+    const sport = market.sport || "soccer";
+    const league = market.league || "eng.1";
+
+    // Запрашиваем proof у TLS Oracle backend
+    const { default: config } = await import("../config.js");
+    const url = `${config.tlsOracle.backendUrl}/api/prove-espn`;
+    const headers = { "Content-Type": "application/json" };
+    if (config.tlsOracle.apiKey) headers["X-API-Key"] = config.tlsOracle.apiKey;
+
+    const proveResp = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ espnEventId: espnId, sport, league }),
+      signal: AbortSignal.timeout(120_000),
+    });
+
+    if (!proveResp.ok) {
+      const text = await proveResp.text();
+      return res.status(502).json({ error: `TLS Oracle: ${text}` });
+    }
+
+    const proofData = await proveResp.json();
+
+    // Возвращаем proof + данные для контрактов
+    res.json({
+      proofData,
+      tlsOracleContract: config.tlsOracle.contractId,
+      marketId: market.id,
+    });
   } catch (err) {
     next(err);
   }
